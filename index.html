@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1b2a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>ホームランスタジアム</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="board">
+      <div class="score"><span class="lbl" id="runsLbl">得点</span><span id="runs">0</span></div>
+      <div class="counts">
+        <div class="cnt"><span class="lbl b">B</span><span id="ballDots" class="dots b"></span></div>
+        <div class="cnt"><span class="lbl s">S</span><span id="strikeDots" class="dots s"></span></div>
+        <div class="cnt"><span class="lbl o">O</span><span id="outDots" class="dots o"></span></div>
+      </div>
+      <div id="diamond"><i id="base2"></i><i id="base3"></i><i id="base1"></i></div>
+    </div>
+    <div id="pitchInfo"><div id="pitchName"></div><div id="pitchSpeed"></div></div>
+    <div id="stats"></div>
+    <div id="pSpeed" class="pitch-only"></div>
+    <div id="batterInfo" class="pitch-only"></div>
+    <div id="live"></div>
+    <div id="help"></div>
+    <div id="pitchSel" class="pitch-only lock">
+      <div id="stamina">スタミナ<i><b id="staBar"></b></i></div>
+      <div id="pitchBtns"></div>
+    </div>
+    <button id="swingBtn" aria-label="スイング">スイング</button>
+  </div>
+
+  <div id="msg"><div id="msgMain"></div><div id="msgSub"></div></div>
+
+  <div id="title" class="overlay">
+    <div class="panel">
+      <h1>ホームラン<span>スタジアム</span></h1>
+      <div class="diffs modes" id="modeSel">
+        <button data-mode="bat" class="sel">バッティング</button>
+        <button data-mode="pitch">ピッチング</button>
+      </div>
+      <p class="lead bat-only">3アウトになるまでに何点取れるか挑戦！</p>
+      <p class="lead pitch-only">3イニングを投げ抜け！ 変化球を操って失点を抑えよう</p>
+      <div class="diffs" id="diffSel">
+        <button data-diff="easy">かんたん</button>
+        <button data-diff="normal" class="sel">ふつう</button>
+        <button data-diff="hard">むずかしい</button>
+      </div>
+      <button id="startBtn" class="start">プレイボール</button>
+      <ul class="howto bat-only">
+        <li class="pc-only"><b>マウス</b>（矢印キー）で黄色いミートカーソルを動かす</li>
+        <li class="pc-only"><b>クリック</b>（スペース）でスイング</li>
+        <li class="touch-only"><b>画面をなぞって</b>黄色いミートカーソルを動かす（指でゾーンが隠れません）</li>
+        <li class="touch-only">右下の<b>スイングボタン</b>で打つ</li>
+        <li>早めに振ると引っ張り（レフト方向）、遅いと流し打ち</li>
+        <li>ボールの少し下を打つとフライ、上を叩くとゴロになる</li>
+      </ul>
+      <ul class="howto pitch-only">
+        <li>試合前に、ストレート以外で使う球種を<b>5つ</b>選ぶ</li>
+        <li class="pc-only"><b>マウス</b>（矢印キー）で投げたいコースを狙い、<b>1〜6キー</b>か下のボタンで球種を選ぶ</li>
+        <li class="pc-only"><b>クリック</b>（スペース）で投球開始。縮むリングが的に重なる瞬間にもう一度押すと狙い通りに決まる</li>
+        <li class="touch-only"><b>画面をなぞって</b>コースを狙い、下のボタンで球種を選ぶ</li>
+        <li class="touch-only"><b>投げるボタン</b>で投球開始。縮むリングが的に重なる瞬間にもう一度押す</li>
+        <li>点線が変化の軌道。変化球で打者のタイミングと目線を外そう</li>
+        <li>ど真ん中は打たれる！ コーナーを突けば打ち損じが増える</li>
+        <li><b>剛速球</b>は球が速いがスタミナを大きく使い荒れやすい。<b>ナックル</b>は揺れながらどこへ行くか投げた本人にも分からない</li>
+        <li>投げるほどスタミナが減り、球速とコントロールが落ちる</li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="arsenal" class="overlay hidden">
+    <div class="panel">
+      <h2>持ち球を選ぶ</h2>
+      <p class="lead">ストレートに加えて、試合で使う球種を<b>5つ</b>選ぼう</p>
+      <div id="arsList"></div>
+      <div id="arsCount">0 / 5</div>
+      <button id="arsGo" class="start" disabled>この球種で試合開始</button>
+      <button id="arsBack" class="sub-btn">戻る</button>
+    </div>
+  </div>
+
+  <div id="over" class="overlay hidden">
+    <div class="panel">
+      <h2>ゲームセット</h2>
+      <div class="result-runs"><small id="ovLbl">得点</small><span id="ovRuns">0</span>点</div>
+      <div id="ovNote"></div>
+      <div class="result-stats">
+        <div><span id="ovK1"></span><b id="ovV1">0</b></div>
+        <div><span id="ovK2"></span><b id="ovV2">0</b></div>
+        <div><span id="ovK3"></span><b id="ovV3">-</b></div>
+      </div>
+      <button id="retryBtn" class="start">もう一度</button>
+      <button id="titleBtn" class="sub-btn">タイトルへ</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
