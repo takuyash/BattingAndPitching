@@ -147,7 +147,7 @@ body.pmode #pitchInfo { display: none; }
   cursor: pointer;
   pointer-events: auto;
 }
-/* 全12球種を 6 個ずつ 2 段に並べる */
+/* 投球練習は全球種のボタンを幅を広げて 2 段に並べる */
 body.practice:not(.touch) #pitchSel { width: min(860px, calc(100vw - 32px)); }
 
 /* ---------- 球種選択 ---------- */
