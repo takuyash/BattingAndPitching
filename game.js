@@ -65,9 +65,9 @@
   //  難易度・球種
   // =========================================================
   const DIFFS = {
-    easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.19, ry: 0.14,  win: 0.16,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
-    normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.16, ry: 0.115, win: 0.125, field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート'] },
-    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.13, ry: 0.095, win: 0.1,   field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール'] },
+    easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.23, ry: 0.14,  win: 0.16,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
+    normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.19, ry: 0.115, win: 0.125, field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート'] },
+    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.16, ry: 0.095, win: 0.1,   field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール'] },
   };
   // drop: 手元で落ちる量（途中まではストレートと同じ軌道を通り、本塁の直前で s^DROP_BEND で落ちる。正なら浮き上がる）
   const DROP_BEND = 5;
@@ -777,9 +777,10 @@
   //  打球
   // =========================================================
   // bat: ミートの中心・範囲とパワー（省略時はプレイヤーのカーソル）
-  function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1 }) {
+  // rect: ミート範囲を横長の四角にする（プレイヤー）。CPU打者は楕円のまま
+  function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1, rect: true }) {
     const ex = (cp[0] - bat.x) / bat.rx, ey = (cp[1] - bat.y) / bat.ry;
-    const e = Math.hypot(ex, ey);
+    const e = bat.rect ? Math.max(Math.abs(ex), Math.abs(ey)) : Math.hypot(ex, ey);
     if (e > 1 || Math.abs(early) > bat.win) return false;
     const qt = 1 - Math.abs(early) / bat.win;
     const q = (1 - Math.pow(e, 1.7)) * (0.5 + 0.5 * Math.pow(qt, 0.6));
@@ -1648,9 +1649,8 @@
     }
   }
   function drawCursor() {
-    const pts = [];
-    for (let i = 0; i < 40; i++) { const a = i / 40 * PI * 2; pts.push([cursor.x + Math.cos(a) * D.rx, cursor.y + Math.sin(a) * D.ry, 0]); }
-    if (polyPath(pts)) {
+    const x0 = cursor.x - D.rx, x1 = cursor.x + D.rx, y0 = cursor.y - D.ry, y1 = cursor.y + D.ry;
+    if (polyPath([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]])) {
       ctx.fillStyle = 'rgba(255,216,40,0.16)'; ctx.fill();
       ctx.strokeStyle = 'rgba(255,216,40,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
     }
