@@ -65,20 +65,24 @@
   //  難易度・球種
   // =========================================================
   const DIFFS = {
-    easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.19, ry: 0.14,  win: 0.12,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
-    normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.16, ry: 0.115, win: 0.095, field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'チェンジアップ', 'シュート'] },
-    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.13, ry: 0.095, win: 0.075, field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'チェンジアップ', 'シュート', 'カットボール'] },
+    easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.19, ry: 0.14,  win: 0.16,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
+    normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.16, ry: 0.115, win: 0.125, field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート'] },
+    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.13, ry: 0.095, win: 0.1,   field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール'] },
   };
+  // drop: 手元で落ちる量（途中まではストレートと同じ軌道を通り、本塁の直前で s^DROP_BEND で落ちる。正なら浮き上がる）
+  const DROP_BEND = 5;
   const PITCHES = {
     'ストレート':   { sp: 1.0,  bx: 0.0,   by: -0.12, w: 3 },
     'カーブ':       { sp: 0.76, bx: 0.32,  by: -0.62, w: 1.2 },
     'スライダー':   { sp: 0.86, bx: 0.38,  by: -0.22, w: 1.5 },
-    'フォーク':     { sp: 0.88, bx: 0.0,   by: -0.55, w: 1 },
+    'フォーク':     { sp: 0.88, bx: 0.0,   by: -0.12, drop: -0.48, w: 1 },
+    'スプリット':   { sp: 0.94, bx: 0.0,   by: -0.12, drop: -0.26, w: 1 },
     'チェンジアップ': { sp: 0.82, bx: -0.15, by: -0.35, w: 1 },
     'シュート':     { sp: 0.93, bx: -0.28, by: -0.15, w: 1 },
     'カットボール': { sp: 0.95, bx: 0.14,  by: -0.12, w: 1 },
     // 以下はピッチングモード専用 (cost: スタミナ消費, ctl: ばらつき倍率, rd: 打者の見極め補正)
-    '剛速球':       { sp: 1.12, bx: 0.0,   by: -0.06, cost: 2.8, ctl: 1.35, heat: true },
+    '剛速球':       { sp: 1.137,bx: 0.0,   by: -0.06, cost: 2.8, ctl: 1.35, heat: true },
+    'ライジング':   { sp: 0.99, bx: 0.0,   by: -0.12, drop: 0.3, cost: 2.0 },
     'ナックルカーブ': { sp: 0.8,  bx: 0.18,  by: -0.78 },
     '縦スライダー': { sp: 0.87, bx: 0.12,  by: -0.5 },
     'シンカー':     { sp: 0.9,  bx: -0.26, by: -0.45 },
@@ -99,16 +103,18 @@
     { con: 0.98, pow: 1.22, eye: 1.0,  spd: 0.86 }, { con: 0.97, pow: 1.12, eye: 0.95, spd: 0.92 }, { con: 1.0,  pow: 1.0,  eye: 1.0,  spd: 1.0 },
     { con: 0.94, pow: 0.95, eye: 0.9,  spd: 1.08 }, { con: 0.9,  pow: 0.88, eye: 0.85, spd: 0.95 }, { con: 0.84, pow: 0.8,  eye: 0.8,  spd: 0.9 },
   ];
-  const P_TYPES = ['ストレート', '剛速球', 'カーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'フォーク', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ナックル'];
-  const P_SHORT = { 'ナックルカーブ': 'ナックルC', '縦スライダー': '縦スラ', 'チェンジアップ': 'チェンジ', 'カットボール': 'カット' };
-  // 12番目は JIS キーボードの「^」（US 配列では「=」）
+  const P_TYPES = ['ストレート', '剛速球', 'ライジング','カーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ナックル'];
+  const P_SHORT = { 'ナックルカーブ': 'ナックルC', '縦スライダー': '縦スラ', 'チェンジアップ': 'チェンジ', 'カットボール': 'カット', 'スプリット': 'スプリ' };
+  // 12番目は JIS キーボードの「^」（US 配列では「=」）、13番目は「¥」（US 配列では「\」）、14番目は「@」（US 配列では「[」）
   const P_DESC = {
-    '剛速球': '160km/h超。スタミナ消費大で荒れやすい',
+    '剛速球': '最速170km/h。スタミナ消費大で荒れやすい',
+    'ライジング': 'ストレートの軌道から手元でホップする',
     'カーブ': '大きく曲がりながら落ちる遅い球',
     'ナックルカーブ': '縦に鋭く落ちるカーブ',
     'スライダー': '横に鋭く曲がる',
     '縦スライダー': '斜め下へ落ちるスライダー',
-    'フォーク': 'ストンと落ちて空振りを奪う',
+    'フォーク': 'ストレートの軌道から手元でストンと落ちる',
+    'スプリット': '速いまま、ストレートの軌道から小さく鋭く落ちる',
     'チェンジアップ': '腕の振りはそのまま、遅く沈む',
     'シュート': '右打者の内角へ食い込む',
     'シンカー': '内角へ曲がりながら沈む',
@@ -124,10 +130,10 @@
     if (Array.isArray(saved) && saved.length === ARSENAL_SIZE && saved.every(n => P_DESC[n])) arsenal = saved;
   } catch (e) { /* 保存領域が使えなくても既定の持ち球で遊べる */ }
   let myPitches = [];
-  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
-  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^'];
+  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen', 'BracketLeft'];
+  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥', '@'];
   // P_VMAX: ストレートの最高球速, P_BRK: 変化量の倍率, P_BEND: 曲がり始めの遅さ（大きいほど手元で鋭く曲がる）
-  const P_VMAX = 158, P_BRK = 2.1, P_BEND = 3, INNINGS = 3;
+  const P_VMAX = 148, P_BRK = 2.1, P_BEND = 3, INNINGS = 3;
   let mode = 'bat', selDiff = 'normal';
   // 投球練習: ピッチングモードの一種（打者なし・全球種・スタミナ無限）
   let practice = false;
@@ -397,7 +403,7 @@
   const keys = {};
   let catcherMitt = [0, 0.75, -0.9];
   let selPitch = P_TYPES[0], stamina = 100, meter = null;
-  const cpuMem = { kmh: 152, last: '' };   // 打者が覚えている直近の球速・球種
+  const cpuMem = { kmh: 146, last: '' };   // 打者が覚えている直近の球速・球種
 
   const SWING_LEAD = 0.12;    // スイング開始からミートまでの時間
   const WINDUP = 1.25;
@@ -487,17 +493,19 @@
     else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
     const brk = [def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
-    return buildPitch(name, kmh, [tx, ty, 0], brk);
+    return buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
   }
-  // tgt: 本塁上を通過する位置, brk: 変化量, bend: 変化の効き始め（s^bend で曲がる）
-  function buildPitch(name, kmh, tgt, brk, bend = 2) {
-    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim: sub(tgt, brk), brk, bend, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
+  // tgt: 本塁上を通過する位置, brk: 変化量, bend: 変化の効き始め（s^bend で曲がる）, drop: 手元での落ち幅
+  function buildPitch(name, kmh, tgt, brk, bend = 2, drop = 0) {
+    const aim = sub(tgt, brk);
+    aim[1] -= drop;
+    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim, brk, bend, drop, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
   }
   function pitchPos(p, s) {
     const k = Math.pow(s, p.bend);
     const pos = [
       p.rel[0] + (p.aim[0] - p.rel[0]) * s + p.brk[0] * k,
-      p.rel[1] + (p.aim[1] - p.rel[1]) * s + p.brk[1] * k,
+      p.rel[1] + (p.aim[1] - p.rel[1]) * s + p.brk[1] * k + p.drop * Math.pow(s, DROP_BEND),
       p.rel[2] + (p.aim[2] - p.rel[2]) * s,
     ];
     if (p.wob) {
@@ -542,7 +550,7 @@
   }
   function idealPitch(name) {
     const def = PITCHES[name];
-    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0], P_BEND);
+    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0], P_BEND, (def.drop || 0) * P_BRK);
   }
   function makePlayerPitch() {
     const def = PITCHES[selPitch], acc = meter.acc, sta = stamina / 100;
@@ -556,7 +564,7 @@
       p.wob = { ax: rand(0.04, 0.08) * P_BRK * (Math.random() < 0.5 ? -1 : 1), ay: rand(0.03, 0.06) * P_BRK, f: rand(2, 3.5) * PI * 2, ph: rand(0, PI * 2) };
       return p;
     }
-    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND);
+    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND, (def.drop || 0) * P_BRK * rand(0.9, 1.1));
   }
 
   // CPU打者: 見えたコースと予想タイミングからスイングを決める
@@ -571,7 +579,7 @@
     // 真ん中から離れるほど芯で捉えにくい
     const loc = Math.min(1.5, Math.hypot(cross[0] / 0.3, (cross[1] - 0.78) / 0.4));
     const sd = 0.022 + 0.07 * loc;
-    const perc = [cross[0] - p.brk[0] * mis + gauss() * sd, cross[1] - p.brk[1] * mis + gauss() * sd];
+    const perc = [cross[0] - p.brk[0] * mis + gauss() * sd, cross[1] - (p.brk[1] + p.drop) * mis + gauss() * sd];
     const two = game.strikes >= 2, wait = game.balls === 3 && !two;
     let ps;
     if (inZone(perc[0], perc[1])) ps = two ? 0.92 : wait ? 0.55 : game.balls + game.strikes === 0 ? 0.6 : 0.75;
@@ -1068,7 +1076,7 @@
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
     if (e.code === 'Escape') quitPractice();
-    const pi = P_CODES.indexOf(e.code.replace('NumpadSubtract', 'Minus').replace('Numpad', 'Digit'));
+    const pi = P_CODES.indexOf(e.code.replace('NumpadSubtract', 'Minus').replace('Numpad', 'Digit').replace('Backslash', 'IntlYen'));
     if (mode === 'pitch' && game.state === 'aim' && pi >= 0 && pi < myPitches.length) selectPitch(myPitches[pi]);
     if (e.code.startsWith('Arrow') || ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) mouse = null;
   });
@@ -1217,8 +1225,10 @@
   //  描画
   // =========================================================
   const SKIN = '#e9b48a';
-  const DEF_COL = { shirt: '#a9b1bd', pants: '#a9b1bd', cap: '#c0262d' };
-  const BAT_COL = { shirt: '#f4f6fa', pants: '#f4f6fa', cap: '#1a2b5e' };
+  // under: アンダーシャツ, sock: ストッキング, helmet: 打者・走者はヘルメット
+  const DEF_COL = { shirt: '#b4bcc8', pants: '#b4bcc8', cap: '#c0262d', under: '#a51f27', sock: '#c0262d', belt: '#7c1219' };
+  const BAT_COL = { shirt: '#f4f6fa', pants: '#f4f6fa', cap: '#1a2b5e', under: '#1a2b5e', sock: '#1a2b5e', belt: '#14204a', helmet: true };
+  const OUTLINE = 'rgba(16,22,38,0.9)', SHOE = '#1b1d22';
 
   function poseJoints(pose, ph) {
     switch (pose) {
@@ -1277,40 +1287,67 @@
     const knee = (h, f) => toW([(h[0] + f[0]) / 2, (J.hip[1] + f[1]) / 2 + 0.03, (J.hip[2] + f[2]) / 2 + 0.13]);
     const kneeL = knee([-0.11], J.fl), kneeR = knee([0.11], J.fr);
     const shL = toW(add(J.sh, [-0.19, -0.04, 0])), shR = toW(add(J.sh, [0.19, -0.04, 0]));
-    const col = o.col;
+    const col = o.col, fwd = [s, 0, c];
+    // ひじ: 肩と手の距離が腕の長さより短ければ、外側・下側へ曲げる
+    const ARM = 0.3;
+    const elbow = (sh, h) => {
+      const v = sub(h, sh), d = Math.hypot(v[0], v[1], v[2]) || 1e-6, u = mul(v, 1 / d);
+      const out = add(sub(sh, w.sh), [0, -0.25, 0]);
+      const perp = sub(out, mul(u, dot(out, u)));
+      const pl = Math.hypot(perp[0], perp[1], perp[2]) || 1e-6;
+      return add(mix(sh, h, 0.5), mul(perp, Math.sqrt(Math.max(0, ARM * ARM - d * d / 4)) / pl));
+    };
+    const elL = elbow(shL, w.hl), elR = elbow(shR, w.hr);
+    // すね: 膝下の 45% まではパンツ、その先はストッキング
+    const shinL = mix(kneeL, w.fl, 0.45), shinR = mix(kneeR, w.fr, 0.45);
+    const toe = f => add(f, add(mul(fwd, 0.13), [0, 0.03, 0]));
+    const chest = mix(w.hip, w.sh, 0.55);
+    const segs = [
+      [w.fl, toe(w.fl), 0.1, SHOE], [w.fr, toe(w.fr), 0.1, SHOE],
+      [hipL, kneeL, 0.14, col.pants], [kneeL, shinL, 0.12, col.pants], [shinL, w.fl, 0.095, col.sock],
+      [hipR, kneeR, 0.14, col.pants], [kneeR, shinR, 0.12, col.pants], [shinR, w.fr, 0.095, col.sock],
+      [w.hip, chest, 0.28, col.shirt], [chest, w.sh, 0.32, col.shirt], [shL, shR, 0.12, col.shirt],
+      [add(w.hip, [0, 0.01, 0]), add(w.hip, [0, 0.05, 0]), 0.285, col.belt],
+      [w.sh, w.head, 0.08, SKIN],
+      [shL, elL, 0.095, col.shirt], [elL, w.hl, 0.075, col.under],
+      [shR, elR, 0.095, col.shirt], [elR, w.hr, 0.075, col.under],
+    ];
     ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
-    limb(hipL, kneeL, 0.13, col.pants); limb(kneeL, w.fl, 0.11, col.pants);
-    limb(hipR, kneeR, 0.13, col.pants); limb(kneeR, w.fr, 0.11, col.pants);
-    limb(w.fl, add(w.fl, [0, 0.02, 0]), 0.12, '#222');
-    limb(w.fr, add(w.fr, [0, 0.02, 0]), 0.12, '#222');
-    limb(w.hip, w.sh, 0.3, col.shirt);
-    limb(shL, w.hl, 0.09, col.shirt);
-    limb(shR, w.hr, 0.09, col.shirt);
-    // 頭
-    const hc = toCam(w.head);
-    if (hc[2] > NEAR) {
-      const hs = proj(hc), hr = cam.f * 0.115 / hc[2];
-      ctx.fillStyle = SKIN;
-      ctx.beginPath(); ctx.arc(hs[0], hs[1], Math.max(1, hr), 0, PI * 2); ctx.fill();
+    // 近くの選手だけ輪郭線を付ける（遠くでは黒くつぶれるため）
+    const sc = toCam(w.sh), big = sc[2] > NEAR && cam.f * 0.3 / sc[2] > 7;
+    if (big) for (const g of segs) limb(g[0], g[1], g[2] + 0.035, OUTLINE);
+    for (const g of segs) limb(g[0], g[1], g[2], g[3]);
+    const dot2 = (p, r, fill) => {
+      const pc = toCam(p);
+      if (pc[2] <= NEAR) return null;
+      const ps = proj(pc), pr = Math.max(1, cam.f * r / pc[2]);
+      if (big) { ctx.fillStyle = OUTLINE; ctx.beginPath(); ctx.arc(ps[0], ps[1], pr + cam.f * 0.018 / pc[2], 0, PI * 2); ctx.fill(); }
+      ctx.fillStyle = fill;
+      ctx.beginPath(); ctx.arc(ps[0], ps[1], pr, 0, PI * 2); ctx.fill();
+      return [ps, pr];
+    };
+    // 手
+    if (!o.glove) dot2(w.hl, 0.045, SKIN);
+    if (!o.ball) dot2(w.hr, 0.045, SKIN);
+    // 頭と帽子（つばは向いている方向へ）
+    const brimA = add(w.head, [fwd[0] * 0.06, 0.05, fwd[2] * 0.06]), brimB = add(w.head, [fwd[0] * 0.19, 0.035, fwd[2] * 0.19]);
+    const hd = dot2(w.head, 0.115, SKIN);
+    if (hd) {
+      const [hs, hr] = hd, cr = col.helmet ? 1.18 : 1.06, cy = hs[1] - hr * (col.helmet ? 0.02 : 0.12);
       ctx.fillStyle = col.cap;
-      ctx.beginPath(); ctx.arc(hs[0], hs[1] - hr * 0.1, Math.max(1, hr * 1.05), PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.arc(hs[0], cy, hr * cr, PI, 0); ctx.closePath(); ctx.fill();
+      if (big) { ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1, hr * 0.14); ctx.stroke(); }
+      // つやのハイライト
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.beginPath(); ctx.ellipse(hs[0] - hr * 0.35, cy - hr * 0.6, hr * 0.3, hr * 0.14, -0.4, 0, PI * 2); ctx.fill();
+      if (big) limb(brimA, brimB, 0.05, OUTLINE);
+      limb(brimA, brimB, 0.03, col.cap);
     }
     if (o.glove) {
-      const gc = toCam(w.hl);
-      if (gc[2] > NEAR) {
-        const gs = proj(gc);
-        ctx.fillStyle = '#7a4a22';
-        ctx.beginPath(); ctx.arc(gs[0], gs[1], Math.max(1, cam.f * (o.mitt ? 0.13 : 0.085) / gc[2]), 0, PI * 2); ctx.fill();
-      }
+      dot2(w.hl, o.mitt ? 0.13 : 0.09, '#8a5427');
+      dot2(add(w.hl, [0, 0.015, 0]), o.mitt ? 0.07 : 0.045, '#a8693a');   // 革の明るい面
     }
-    if (o.ball) {
-      const bc = toCam(w.hr);
-      if (bc[2] > NEAR) {
-        const bs = proj(bc);
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(bs[0], bs[1], Math.max(1, cam.f * 0.04 / bc[2]), 0, PI * 2); ctx.fill();
-      }
-    }
+    if (o.ball) dot2(w.hr, 0.04, '#fff');
     ctx.globalAlpha = 1;
   }
 
@@ -1599,7 +1636,7 @@
     batterVisible = !practice; swingStart = -1;
     stamina = 100; meter = null;
     Object.assign(prac, { strikes: 0, perfect: 0, best: 0, miss: 0 });
-    cpuMem.kmh = 152; cpuMem.last = '';
+    cpuMem.kmh = 146; cpuMem.last = '';
     $('pitchSel').classList.add('lock');
     $('pSpeed').textContent = '';
     resetFielders(true);
@@ -1619,9 +1656,9 @@
   }
   // ピッチャー視点の変化方向（+x は画面左）
   function pitchArrow(n) {
-    const d = PITCHES[n];
-    return d.knuckle ? '?' : Math.hypot(d.bx, d.by) < 0.15 ? '●'
-      : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-d.by, -d.bx) / DEG)}deg)">→</span>`;
+    const d = PITCHES[n], by = d.by + (d.drop || 0);
+    return d.knuckle ? '?' : Math.hypot(d.bx, by) < 0.15 ? '●'
+      : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-by, -d.bx) / DEG)}deg)">→</span>`;
   }
   function buildPitchButtons() {
     myPitches = practice ? P_TYPES.slice() : P_TYPES.filter(n => n === 'ストレート' || arsenal.includes(n));
