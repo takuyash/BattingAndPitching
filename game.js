@@ -47,6 +47,7 @@
   const BALL_R = 0.037;
   const FAIR = PI / 4;
   const ZONE = { x0: -0.215, x1: 0.215, y0: 0.5, y1: 1.06 };
+  const BATTER_X = -0.95;   // 打者の立ち位置（三塁側）
   const G = 9.8, DRAG = 0.0042;
   const STAND_SLOPE = 0.6, STAND_DEPTH = 42;
   const POS_NAME = { P: 'ピッチャー', C: 'キャッチャー', '1B': 'ファースト', '2B': 'セカンド', SS: 'ショート', '3B': 'サード', LF: 'レフト', CF: 'センター', RF: 'ライト' };
@@ -77,7 +78,7 @@
     'シュート':     { sp: 0.93, bx: -0.28, by: -0.15, w: 1 },
     'カットボール': { sp: 0.95, bx: 0.14,  by: -0.12, w: 1 },
     // 以下はピッチングモード専用 (cost: スタミナ消費, ctl: ばらつき倍率, rd: 打者の見極め補正)
-    '剛速球':       { sp: 1.07, bx: 0.0,   by: -0.06, cost: 2.8, ctl: 1.35 },
+    '剛速球':       { sp: 1.12, bx: 0.0,   by: -0.06, cost: 2.8, ctl: 1.35, heat: true },
     'ナックルカーブ': { sp: 0.8,  bx: 0.18,  by: -0.78 },
     '縦スライダー': { sp: 0.87, bx: 0.12,  by: -0.5 },
     'シンカー':     { sp: 0.9,  bx: -0.26, by: -0.45 },
@@ -123,10 +124,14 @@
     if (Array.isArray(saved) && saved.length === ARSENAL_SIZE && saved.every(n => P_DESC[n])) arsenal = saved;
   } catch (e) { /* 保存領域が使えなくても既定の持ち球で遊べる */ }
   let myPitches = [];
-  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'];
-  // P_VMAX: ストレートの最高球速, P_BRK: 変化量の倍率
-  const P_VMAX = 158, P_BRK = 1.5, INNINGS = 3;
+  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
+  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^'];
+  // P_VMAX: ストレートの最高球速, P_BRK: 変化量の倍率, P_BEND: 曲がり始めの遅さ（大きいほど手元で鋭く曲がる）
+  const P_VMAX = 158, P_BRK = 2.1, P_BEND = 3, INNINGS = 3;
   let mode = 'bat', selDiff = 'normal';
+  // 投球練習: ピッチングモードの一種（打者なし・全球種・スタミナ無限）
+  let practice = false;
+  const prac = { strikes: 0, perfect: 0, best: 0, miss: 0 };   // miss: 狙いからのズレの合計 (m)
 
   // =========================================================
   //  カメラ & 投影
@@ -367,7 +372,11 @@
     bat(q) { noise({ f: 2400, q: 0.7, dur: 0.18, gain: 0.35 + 0.5 * q }); noise({ f: 900, q: 1.4, dur: 0.09, gain: 0.4 }); tone({ f: 1500, f2: 450, dur: 0.07, gain: 0.15 + 0.25 * q, type: 'triangle' }); },
     swing() { noise({ f: 300, f2: 1600, q: 1.2, dur: 0.22, gain: 0.16, at: 0.08 }); },
     mitt() { noise({ type: 'lowpass', f: 700, dur: 0.1, gain: 0.8 }); tone({ f: 160, f2: 70, dur: 0.08, gain: 0.35 }); },
+    // 剛速球: 空気を裂く音と重い捕球音
+    heat() { noise({ f: 1800, f2: 5000, q: 2, dur: 0.3, gain: 0.22, at: 0.04 }); },
+    bigMitt() { noise({ type: 'lowpass', f: 1200, dur: 0.14, gain: 1.0 }); tone({ f: 120, f2: 45, dur: 0.16, gain: 0.6 }); },
     glove() { noise({ type: 'lowpass', f: 900, dur: 0.07, gain: 0.35 }); },
+    hbp() { noise({ type: 'lowpass', f: 450, dur: 0.12, gain: 0.9 }); tone({ f: 220, f2: 90, dur: 0.1, gain: 0.4 }); },
     cheer(d) { noise({ f: 1100, q: 0.6, dur: d, gain: 0.3, at: 0.3 }); noise({ f: 2400, q: 0.7, dur: d * 0.9, gain: 0.12, at: 0.4 }); noise({ f: 500, q: 0.5, dur: d, gain: 0.18, at: 0.5 }); },
     ooh() { noise({ f: 650, q: 0.8, dur: 1.2, gain: 0.14, at: 0.25 }); },
   };
@@ -441,7 +450,11 @@
     dots('strikeDots', game.strikes, 2);
     dots('outDots', game.outs, 2);
     for (let b = 1; b <= 3; b++) $('base' + b).classList.toggle('on', runners.some(r => !r.out && Math.round(r.b) === b));
-    if (mode === 'pitch') {
+    if (practice) {
+      $('runs').textContent = game.pitches;
+      const rate = game.pitches ? Math.round(prac.strikes / game.pitches * 100) + '%' : '-';
+      $('stats').innerHTML = `ストライク率 <b>${rate}</b> PERFECT <b>${prac.perfect}</b> 最速 <b>${prac.best ? prac.best + 'km/h' : '-'}</b>`;
+    } else if (mode === 'pitch') {
       $('stats').innerHTML = `<b>${game.inning}回</b> <b>${game.ks}K</b> 被安打 <b>${game.hits}</b> 球数 <b>${game.pitches}</b>`;
       const n = game.batter % LINEUP.length, b = LINEUP[n];
       $('batterInfo').innerHTML = `${n + 1}番打者　ミート <b>${grade(b.con)}</b> パワー <b>${grade(b.pow)}</b> 走力 <b>${grade(b.spd)}</b>`;
@@ -471,18 +484,20 @@
     const kmh = rand(D.vmin, D.vmax) * def.sp;
     let tx, ty;
     if (Math.random() < 0.6) { tx = rand(-0.2, 0.2); ty = rand(0.52, 1.04); }
+    else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
     const brk = [def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
     return buildPitch(name, kmh, [tx, ty, 0], brk);
   }
-  // tgt: 本塁上を通過する位置, brk: 変化量
-  function buildPitch(name, kmh, tgt, brk) {
-    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim: sub(tgt, brk), brk, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
+  // tgt: 本塁上を通過する位置, brk: 変化量, bend: 変化の効き始め（s^bend で曲がる）
+  function buildPitch(name, kmh, tgt, brk, bend = 2) {
+    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim: sub(tgt, brk), brk, bend, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
   }
   function pitchPos(p, s) {
+    const k = Math.pow(s, p.bend);
     const pos = [
-      p.rel[0] + (p.aim[0] - p.rel[0]) * s + p.brk[0] * s * s,
-      p.rel[1] + (p.aim[1] - p.rel[1]) * s + p.brk[1] * s * s,
+      p.rel[0] + (p.aim[0] - p.rel[0]) * s + p.brk[0] * k,
+      p.rel[1] + (p.aim[1] - p.rel[1]) * s + p.brk[1] * k,
       p.rel[2] + (p.aim[2] - p.rel[2]) * s,
     ];
     if (p.wob) {
@@ -527,7 +542,7 @@
   }
   function idealPitch(name) {
     const def = PITCHES[name];
-    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0]);
+    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0], P_BEND);
   }
   function makePlayerPitch() {
     const def = PITCHES[selPitch], acc = meter.acc, sta = stamina / 100;
@@ -541,7 +556,7 @@
       p.wob = { ax: rand(0.04, 0.08) * P_BRK * (Math.random() < 0.5 ? -1 : 1), ay: rand(0.03, 0.06) * P_BRK, f: rand(2, 3.5) * PI * 2, ph: rand(0, PI * 2) };
       return p;
     }
-    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0]);
+    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND);
   }
 
   // CPU打者: 見えたコースと予想タイミングからスイングを決める
@@ -551,7 +566,8 @@
     const cross = pitchPos(p, 1);
     // 遅い球ほど変化を見極めやすく、同じ球種が続くと慣れる
     const read = clamp(D.read * b.con + (1 - def.sp) * 1.2 + (def.rd || 0) + (p.name === cpuMem.last ? 0.12 : 0), 0, 0.95);
-    const mis = (1 - read) * 0.45;
+    // 見た目の変化量を増やしても打者の騙されやすさは変えない（変化量 1.5 倍のときの 0.45 が基準）
+    const mis = (1 - read) * 0.45 * 1.5 / P_BRK;
     // 真ん中から離れるほど芯で捉えにくい
     const loc = Math.min(1.5, Math.hypot(cross[0] / 0.3, (cross[1] - 0.78) / 0.4));
     const sd = 0.022 + 0.07 * loc;
@@ -565,7 +581,8 @@
     }
     const Tavg = REL[2] / (cpuMem.kmh / 3.6);
     const Texp = lerp(Tavg, p.T, clamp(D.adapt * b.con, 0, 0.95)) + gauss() * (0.018 + Math.max(0, p.kmh - 120) * 0.0004);
-    return { swing: Math.random() < ps, perc, Texp, early: p.T - Texp, bat: { x: perc[0], y: perc[1], rx: D.rx * b.con, ry: D.ry * b.con, win: D.win, pow: b.pow } };
+    // 体に向かってくる球は振らずによける
+    return { swing: !hitsBatter(cross) && Math.random() < ps, perc, Texp, early: p.T - Texp, bat: { x: perc[0], y: perc[1], rx: D.rx * b.con, ry: D.ry * b.con, win: D.win, pow: b.pow } };
   }
   function cpuSwing(now) {
     pitch.swung = true;
@@ -588,12 +605,14 @@
   function releasePlayerPitch(now) {
     if (meter.acc === null) lockMeter(true);
     releasePitch(now, makePlayerPitch());
+    const def = PITCHES[pitch.name];
+    if (def.heat) sfx.heat();
+    game.pitches++;
+    if (practice) { updateHUD(); return; }
     pitch.cpu = planBatter(pitch);
     cpuMem.kmh = lerp(cpuMem.kmh, pitch.kmh, 0.5);
     cpuMem.last = pitch.name;
-    const def = PITCHES[pitch.name];
     stamina = Math.max(0, stamina - (def.cost || (def.sp < 0.9 ? 1.9 : 1.4)));
-    game.pitches++;
     updateHUD();
   }
   function startAim() {
@@ -614,11 +633,15 @@
   const startNext = () => (mode === 'pitch' ? startAim() : startWindup());
 
   function endPitch() {
-    sfx.mitt();
+    if (!pitch.hbp) { if (PITCHES[pitch.name].heat) sfx.bigMitt(); else sfx.mitt(); }
     setLive('');
     lastCross = { p: pitch.cross, strike: pitch.swung || pitch.inZone };
+    if (practice) { practicePitchResult(); return; }
     let walk = false;
-    if (pitch.swung) {
+    if (pitch.hbp) {
+      walk = true;
+      showMsg('デッドボール', '', 'good');
+    } else if (pitch.swung) {
       game.strikes++;
       if (game.strikes >= 3) showMsg('三振', mode === 'pitch' ? `空振り ${game.ks + 1}K` : '空振り', 'bad'); else showMsg('空振り', '', 'strike', 1.1);
     } else if (pitch.inZone) {
@@ -630,8 +653,8 @@
     }
     if (game.strikes >= 3) { game.outs++; game.ks++; game.batter++; game.balls = game.strikes = 0; }
     if (walk) {
-      const spd = batterSpd();   // 打順を進める前に四球の打者の走力を取る
-      game.bb++; game.batter++;
+      const spd = batterSpd();   // 打順を進める前に四死球の打者の走力を取る
+      game.bb++; game.batter++;  // bb: 四死球の数
       game.balls = game.strikes = 0;
       const sorted = runners.filter(r => !r.out).sort((a, b) => a.b - b.b);
       let need = 1;
@@ -641,6 +664,37 @@
     }
     updateHUD();
     toBetween(walk ? 2.6 : 1.2);
+  }
+
+  // デッドボール: 本塁上で打者の体に当たったか（振っていたらストライク扱いなので呼ばない）
+  const hitsBatter = c => !practice && c[0] <= BATTER_X + 0.17 + BALL_R && c[0] >= BATTER_X - 0.25 && c[1] >= 0.1 && c[1] <= 1.75;
+  function startHBP() {
+    pitch.hbp = true;
+    sfx.hbp();
+    flash = 0.35;
+    ballPos = pitch.cross.slice();
+    ballTrail = [];
+    // 体に当たって跳ね返る
+    pitch.vel = [rand(0.8, 1.6), rand(1.0, 2.0), rand(2.0, 3.5)];
+    lastCross = { p: pitch.cross, strike: false };
+    game.state = 'hbp'; game.st = 0;
+    $('pitchInfo').classList.remove('show');
+  }
+
+  // 投球練習: カウントは進めず、球速と狙いからのズレを見せる（狙いのカーソルは投球中は動かない）
+  function practicePitchResult() {
+    const miss = Math.hypot(pitch.cross[0] - cursor.x, pitch.cross[1] - cursor.y);
+    if (pitch.inZone) prac.strikes++;
+    if (meter.grade === 'PERFECT') prac.perfect++;
+    prac.best = Math.max(prac.best, pitch.kmh);
+    prac.miss += miss;
+    showMsg(pitch.inZone ? 'ストライク' : 'ボール', `${pitch.kmh} km/h ／ 狙いから ${Math.round(miss * 100)} cm`, pitch.inZone ? 'strike' : 'neutral', 1.1);
+    updateHUD();
+    toBetween(1.0);
+  }
+  function quitPractice() {
+    if (!practice || game.state === 'title' || game.state === 'over') return;
+    gameOver();
   }
 
   function toBetween(dur) {
@@ -1013,6 +1067,7 @@
   window.addEventListener('keydown', e => {
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
+    if (e.code === 'Escape') quitPractice();
     const pi = P_CODES.indexOf(e.code.replace('NumpadSubtract', 'Minus').replace('Numpad', 'Digit'));
     if (mode === 'pitch' && game.state === 'aim' && pi >= 0 && pi < myPitches.length) selectPitch(myPitches[pi]);
     if (e.code.startsWith('Arrow') || ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) mouse = null;
@@ -1054,9 +1109,16 @@
             if (tryHit(pitch.cross, cpu.early, cpu.bat)) return;
           }
         } else if (pitch.swung && tryHit(pitch.cross, pitch.T - (pitch.swingT + SWING_LEAD))) return;
+        if (!pitch.swung && hitsBatter(pitch.cross)) { startHBP(); return; }
       }
       ballPos = pitchPos(pitch, Math.min(s, pitch.sEnd));
       if (s >= pitch.sEnd) endPitch();
+    } else if (st === 'hbp') {
+      const v = pitch.vel;
+      v[1] -= G * dt;
+      ballPos = add(ballPos, mul(v, dt));
+      if (ballPos[1] < BALL_R) { ballPos[1] = BALL_R; v[1] = Math.abs(v[1]) * 0.4; v[0] *= 0.7; v[2] *= 0.7; }
+      if (game.st >= 0.8) endPitch();
     } else if (st === 'hitstop') {
       if (game.st >= 0.09) { game.state = 'play'; game.st = 0; }
     } else if (st === 'play') {
@@ -1088,7 +1150,8 @@
       }
     }
 
-    if (ballPos && st === 'pitch') { ballTrail.push(ballPos.slice()); if (ballTrail.length > 6) ballTrail.shift(); }
+    // 剛速球は残像を長く引く
+    if (ballPos && st === 'pitch') { ballTrail.push(ballPos.slice()); if (ballTrail.length > (PITCHES[pitch.name].heat ? 14 : 6)) ballTrail.shift(); }
 
     // キャッチャーミット（ピッチングでは狙ったコースに構える）
     const mt = pitch && st === 'pitch' ? pitchPos(pitch, pitch.sEnd)
@@ -1110,7 +1173,7 @@
   function startWindup() {
     game.state = 'windup'; game.st = 0;
     pitch = null; play = null; ballPos = null; ballTrail = []; lastCross = null;
-    swingStart = -1; batterVisible = true;
+    swingStart = -1; batterVisible = !practice;
     resetFielders(true);
   }
 
@@ -1277,7 +1340,7 @@
       hip: [-0.08 * sw, 0.88, -0.05], sh: [-0.1 * sw, 1.38, -0.02],
       hl: [0, 0, 0], hr: [0, 0, 0], head: [-0.04 - 0.08 * sw, 1.58, 0.02],
     };
-    drawPerson({ x: -0.95, z: 0, face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h } });
+    drawPerson({ x: BATTER_X, z: 0, face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h } });
     const mid = add(bp.h, mul(bp.d, 0.42)), tip = add(bp.h, mul(bp.d, 0.86));
     limb(bp.h, mid, 0.035, '#c9995e');
     limb(mid, tip, 0.065, '#d9b07a');
@@ -1286,12 +1349,14 @@
   function drawBall() {
     if (!ballPos) return;
     if (ballTrail.length > 1) {
+      const heat = game.state === 'pitch' && pitch && PITCHES[pitch.name].heat;
       for (let i = 1; i < ballTrail.length; i++) {
         const a = toCam(ballTrail[i - 1]), b = toCam(ballTrail[i]);
         if (a[2] < NEAR || b[2] < NEAR) continue;
         const sa = proj(a), sb = proj(b);
-        ctx.strokeStyle = `rgba(255,255,255,${(i / ballTrail.length) * 0.45})`;
-        ctx.lineWidth = Math.max(1.5, cam.f * BALL_R * 1.6 / b[2]);
+        const k = i / ballTrail.length;
+        ctx.strokeStyle = heat ? `rgba(140,215,255,${k * 0.8})` : `rgba(255,255,255,${k * 0.45})`;
+        ctx.lineWidth = Math.max(1.5, cam.f * BALL_R * (heat ? 2.2 : 1.6) / b[2]);
         ctx.beginPath(); ctx.moveTo(sa[0], sa[1]); ctx.lineTo(sb[0], sb[1]); ctx.stroke();
       }
     }
@@ -1441,10 +1506,13 @@
     drawFar();
 
     const st = game.state;
-    const batting = st === 'aim' || st === 'windup' || st === 'pitch' || st === 'between' || st === 'hitstop';
+    const batting = st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hbp' || st === 'between' || st === 'hitstop';
+
+    // 投球練習はブルペンのイメージで投手と捕手だけ
+    const crew = practice && st !== 'title' ? fielders.slice(0, 2) : fielders;
 
     // 影
-    for (const f of fielders) groundEllipse(f.x, f.z, 0.45, 'rgba(0,0,0,0.25)');
+    for (const f of crew) groundEllipse(f.x, f.z, 0.45, 'rgba(0,0,0,0.25)');
     for (const r of runners) { const p = runnerPos(r.b); groundEllipse(p[0], p[2], 0.45, 'rgba(0,0,0,0.25)'); }
     if (ballPos && st !== 'pitch') {
       const a = clamp(0.45 - ballPos[1] * 0.006, 0.12, 0.45);
@@ -1455,9 +1523,9 @@
     const objs = [];
     const push = (p, fn) => { const c = toCam(p); if (c[2] > NEAR) objs.push({ d: c[2], fn }); };
 
-    fielders.forEach((f, i) => {
+    crew.forEach((f, i) => {
       let J, alpha = 1, glove = true, mitt = false, ovW = null, ball = false;
-      if (i === 0 && (st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hitstop' || (st === 'play' && play.t < f.re))) {
+      if (i === 0 && (st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hbp' || st === 'hitstop' || (st === 'play' && play.t < f.re))) {
         J = st === 'aim' ? pitcherJoints('set')
           : st === 'windup' ? pitcherJoints(game.st < 0.25 ? 'set' : 'wind', clamp((game.st - 0.25) / (WINDUP - 0.25), 0, 1)) : pitcherJoints('follow');
         ball = st === 'windup' || st === 'aim';
@@ -1493,7 +1561,7 @@
       push([p[0], 1, p[2]], () => drawPerson({ x: p[0], z: p[2], face, J, col: BAT_COL }));
     }
 
-    if (batterVisible && st !== 'title' && st !== 'over') push([-0.95, 1, 0], drawBatter);
+    if (batterVisible && st !== 'title' && st !== 'over') push([BATTER_X, 1, 0], drawBatter);
     if (batting) push([0, 0.78, 0], drawZone);
     if (ballPos) push(ballPos, drawBall);
 
@@ -1528,8 +1596,9 @@
   function resetGame() {
     Object.assign(game, { outs: 0, balls: 0, strikes: 0, runs: 0, hits: 0, hrs: 0, best: 0, inning: 1, ks: 0, bb: 0, pitches: 0, batter: 0 });
     runners = []; pitch = null; play = null; ballPos = null; ballTrail = [];
-    batterVisible = true; swingStart = -1;
+    batterVisible = !practice; swingStart = -1;
     stamina = 100; meter = null;
+    Object.assign(prac, { strikes: 0, perfect: 0, best: 0, miss: 0 });
     cpuMem.kmh = 152; cpuMem.last = '';
     $('pitchSel').classList.add('lock');
     $('pSpeed').textContent = '';
@@ -1540,11 +1609,13 @@
   function applyModeUI() {
     const P = mode === 'pitch', touch = document.body.classList.contains('touch');
     document.body.classList.toggle('pmode', P);
-    $('help').textContent = P
-      ? 'マウスで狙う ／ クリックで投球 → 縮むリングが的に重なる瞬間にもう一度クリック ／ 1〜6キーで球種'
+    document.body.classList.toggle('practice', practice);
+    $('help').textContent = practice
+      ? 'マウスで狙う ／ クリックで投球 → リングが的に重なる瞬間にもう一度クリック ／ 1〜0・-・^キーで球種 ／ Escで終了'
+      : P ? 'マウスで狙う ／ クリックで投球 → 縮むリングが的に重なる瞬間にもう一度クリック ／ 1〜6キーで球種'
       : touch ? '画面をなぞってカーソル移動 ／ ボタンでスイング' : 'マウスでカーソル移動 ／ クリック・スペースでスイング';
     $('swingBtn').textContent = P ? '投げる' : 'スイング';
-    $('runsLbl').textContent = P ? '失点' : '得点';
+    $('runsLbl').textContent = practice ? '球数' : P ? '失点' : '得点';
   }
   // ピッチャー視点の変化方向（+x は画面左）
   function pitchArrow(n) {
@@ -1553,9 +1624,9 @@
       : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-d.by, -d.bx) / DEG)}deg)">→</span>`;
   }
   function buildPitchButtons() {
-    myPitches = P_TYPES.filter(n => n === 'ストレート' || arsenal.includes(n));
+    myPitches = practice ? P_TYPES.slice() : P_TYPES.filter(n => n === 'ストレート' || arsenal.includes(n));
     $('pitchBtns').innerHTML = myPitches.map((n, i) =>
-      `<button data-p="${n}"><i>${i + 1}</i>${pitchArrow(n)}<span class="pc-only">${n}</span><span class="touch-only">${P_SHORT[n] || n}</span></button>`
+      `<button data-p="${n}"><i>${P_KEYS[i]}</i>${pitchArrow(n)}<span class="pc-only">${n}</span><span class="touch-only">${P_SHORT[n] || n}</span></button>`
     ).join('');
     document.querySelectorAll('#pitchBtns button').forEach(b => b.addEventListener('click', () => selectPitch(b.dataset.p)));
     selectPitch(myPitches.includes(selPitch) ? selPitch : myPitches[0]);
@@ -1604,6 +1675,7 @@
     ac();
     D = (mode === 'pitch' ? PDIFFS : DIFFS)[selDiff];
     applyModeUI();
+    if (mode === 'pitch') buildPitchButtons();
     resetGame();
     $('title').classList.add('hidden');
     $('arsenal').classList.add('hidden');
@@ -1616,14 +1688,19 @@
     game.state = 'over';
     document.body.classList.remove('playing');
     const P = mode === 'pitch';
-    $('ovLbl').textContent = P ? '失点' : '得点';
-    $('ovRuns').textContent = game.runs;
-    const rows = P
+    $('ovLbl').textContent = practice ? '投球数' : P ? '失点' : '得点';
+    $('ovRuns').textContent = practice ? game.pitches : game.runs;
+    $('ovUnit').textContent = practice ? '球' : '点';
+    const n = game.pitches || 1;
+    const rows = practice
+      ? [['ストライク率', game.pitches ? Math.round(prac.strikes / n * 100) + '%' : '-'], ['平均のズレ', game.pitches ? Math.round(prac.miss / n * 100) + 'cm' : '-'], ['最速', prac.best ? prac.best + 'km/h' : '-']]
+      : P
       ? [['奪三振', game.ks + 'K'],['被安打', game.hits], ['球数', game.pitches]]
       : [['安打', game.hits], ['本塁打', game.hrs], ['最長飛距離', game.best ? Math.round(game.best) + 'm' : '-']];
     rows.forEach(([k, v], i) => { $('ovK' + (i + 1)).textContent = k; $('ovV' + (i + 1)).textContent = v; });
     let note = '';
-    if (P && game.runs === 0) note = game.hits === 0 ? (game.bb === 0 ? '完全試合！' : 'ノーヒットノーラン！') : '完封！';
+    if (practice) note = prac.perfect ? `PERFECT ${prac.perfect}回` : '';
+    else if (P && game.runs === 0) note = game.hits === 0 ? (game.bb === 0 ? '完全試合！' : 'ノーヒットノーラン！') : '完封！';
     else if (P && game.runs <= 2) note = 'ナイスピッチング！';
     $('ovNote').textContent = note;
     setTimeout(() => $('over').classList.remove('hidden'), 400);
@@ -1636,12 +1713,17 @@
       fn(b);
     }));
   }
-  radio('modeSel', b => { mode = b.dataset.mode; applyModeUI(); });
+  radio('modeSel', b => {
+    practice = b.dataset.mode === 'practice';
+    mode = practice ? 'pitch' : b.dataset.mode;
+    applyModeUI();
+  });
   radio('diffSel', b => { selDiff = b.dataset.diff; });
   buildPitchButtons();
   if (COARSE) enableTouch();
   applyModeUI();
-  $('startBtn').addEventListener('click', () => (mode === 'pitch' ? openArsenal() : startGame()));
+  $('startBtn').addEventListener('click', () => (mode === 'pitch' && !practice ? openArsenal() : startGame()));
+  $('quitBtn').addEventListener('click', quitPractice);
   $('retryBtn').addEventListener('click', startGame);
   $('titleBtn').addEventListener('click', () => {
     $('over').classList.add('hidden');

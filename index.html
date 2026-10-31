@@ -15,21 +15,22 @@
   <div id="hud" class="hidden">
     <div id="board">
       <div class="score"><span class="lbl" id="runsLbl">得点</span><span id="runs">0</span></div>
-      <div class="counts">
+      <div class="counts match-only">
         <div class="cnt"><span class="lbl b">B</span><span id="ballDots" class="dots b"></span></div>
         <div class="cnt"><span class="lbl s">S</span><span id="strikeDots" class="dots s"></span></div>
         <div class="cnt"><span class="lbl o">O</span><span id="outDots" class="dots o"></span></div>
       </div>
-      <div id="diamond"><i id="base2"></i><i id="base3"></i><i id="base1"></i></div>
+      <div id="diamond" class="match-only"><i id="base2"></i><i id="base3"></i><i id="base1"></i></div>
     </div>
     <div id="pitchInfo"><div id="pitchName"></div><div id="pitchSpeed"></div></div>
     <div id="stats"></div>
     <div id="pSpeed" class="pitch-only"></div>
-    <div id="batterInfo" class="pitch-only"></div>
+    <div id="batterInfo" class="pitch-only match-only"></div>
+    <button id="quitBtn" class="practice-only">練習終了</button>
     <div id="live"></div>
     <div id="help"></div>
     <div id="pitchSel" class="pitch-only lock">
-      <div id="stamina">スタミナ<i><b id="staBar"></b></i></div>
+      <div id="stamina" class="match-only">スタミナ<i><b id="staBar"></b></i></div>
       <div id="pitchBtns"></div>
     </div>
     <button id="swingBtn" aria-label="スイング">スイング</button>
@@ -43,10 +44,12 @@
       <div class="diffs modes" id="modeSel">
         <button data-mode="bat" class="sel">バッティング</button>
         <button data-mode="pitch">ピッチング</button>
+        <button data-mode="practice">投球練習</button>
       </div>
       <p class="lead bat-only">3アウトになるまでに何点取れるか挑戦！</p>
-      <p class="lead pitch-only">3イニングを投げ抜け！ 変化球を操って失点を抑えよう</p>
-      <div class="diffs" id="diffSel">
+      <p class="lead pitch-only match-only">3イニングを投げ抜け！ 変化球を操って失点を抑えよう</p>
+      <p class="lead practice-only">ブルペンで投げ込み！ 全球種を好きなだけ試せる</p>
+      <div class="diffs match-only" id="diffSel">
         <button data-diff="easy">かんたん</button>
         <button data-diff="normal" class="sel">ふつう</button>
         <button data-diff="hard">むずかしい</button>
@@ -61,15 +64,17 @@
         <li>ボールの少し下を打つとフライ、上を叩くとゴロになる</li>
       </ul>
       <ul class="howto pitch-only">
-        <li>試合前に、ストレート以外で使う球種を<b>5つ</b>選ぶ</li>
-        <li class="pc-only"><b>マウス</b>（矢印キー）で投げたいコースを狙い、<b>1〜6キー</b>か下のボタンで球種を選ぶ</li>
+        <li class="match-only">試合前に、ストレート以外で使う球種を<b>5つ</b>選ぶ</li>
+        <li class="practice-only">打者はいない。<b>全12球種</b>をスタミナ切れなしで投げられる</li>
+        <li class="pc-only"><b>マウス</b>（矢印キー）で投げたいコースを狙い、<b>数字キー</b>か下のボタンで球種を選ぶ</li>
         <li class="pc-only"><b>クリック</b>（スペース）で投球開始。縮むリングが的に重なる瞬間にもう一度押すと狙い通りに決まる</li>
         <li class="touch-only"><b>画面をなぞって</b>コースを狙い、下のボタンで球種を選ぶ</li>
         <li class="touch-only"><b>投げるボタン</b>で投球開始。縮むリングが的に重なる瞬間にもう一度押す</li>
         <li>点線が変化の軌道。変化球で打者のタイミングと目線を外そう</li>
-        <li>ど真ん中は打たれる！ コーナーを突けば打ち損じが増える</li>
+        <li class="match-only">ど真ん中は打たれる！ コーナーを突けば打ち損じが増える</li>
         <li><b>剛速球</b>は球が速いがスタミナを大きく使い荒れやすい。<b>ナックル</b>は揺れながらどこへ行くか投げた本人にも分からない</li>
-        <li>投げるほどスタミナが減り、球速とコントロールが落ちる</li>
+        <li class="match-only">投げるほどスタミナが減り、球速とコントロールが落ちる</li>
+        <li class="practice-only">投げるたびに球速と狙いからのズレを表示。<b>練習終了</b>ボタン（Escキー）で成績を見る</li>
       </ul>
     </div>
   </div>
@@ -88,7 +93,7 @@
   <div id="over" class="overlay hidden">
     <div class="panel">
       <h2>ゲームセット</h2>
-      <div class="result-runs"><small id="ovLbl">得点</small><span id="ovRuns">0</span>点</div>
+      <div class="result-runs"><small id="ovLbl">得点</small><span id="ovRuns">0</span><b id="ovUnit">点</b></div>
       <div id="ovNote"></div>
       <div class="result-stats">
         <div><span id="ovK1"></span><b id="ovV1">0</b></div>
