@@ -1225,10 +1225,11 @@
   //  描画
   // =========================================================
   const SKIN = '#e9b48a';
-  // under: アンダーシャツ, sock: ストッキング, helmet: 打者・走者はヘルメット
-  const DEF_COL = { shirt: '#b4bcc8', pants: '#b4bcc8', cap: '#c0262d', under: '#a51f27', sock: '#c0262d', belt: '#7c1219' };
-  const BAT_COL = { shirt: '#f4f6fa', pants: '#f4f6fa', cap: '#1a2b5e', under: '#1a2b5e', sock: '#1a2b5e', belt: '#14204a', helmet: true };
-  const OUTLINE = 'rgba(16,22,38,0.9)', SHOE = '#1b1d22';
+  // under: アンダーシャツ, sock: ストッキング・文字色, team: 胸マーク, helmet: 打者・走者はヘルメット
+  const DEF_COL = { shirt: '#b4bcc8', pants: '#b4bcc8', cap: '#c0262d', under: '#a51f27', sock: '#c0262d', belt: '#7c1219', team: 'BLAZE' };
+  const BAT_COL = { shirt: '#f4f6fa', pants: '#f4f6fa', cap: '#1a2b5e', under: '#1a2b5e', sock: '#1a2b5e', belt: '#14204a', team: 'STARS', helmet: true };
+  const OUTLINE = 'rgba(16,22,38,0.9)', SHOE = '#1b1d22', GEAR = '#2c3446', HAIR = '#2a1d16';
+  const UNI_NUM = { P: 18, C: 27, '1B': 3, '2B': 4, SS: 6, '3B': 5, LF: 7, CF: 8, RF: 9 };
 
   function poseJoints(pose, ph) {
     switch (pose) {
@@ -1287,7 +1288,7 @@
     const knee = (h, f) => toW([(h[0] + f[0]) / 2, (J.hip[1] + f[1]) / 2 + 0.03, (J.hip[2] + f[2]) / 2 + 0.13]);
     const kneeL = knee([-0.11], J.fl), kneeR = knee([0.11], J.fr);
     const shL = toW(add(J.sh, [-0.19, -0.04, 0])), shR = toW(add(J.sh, [0.19, -0.04, 0]));
-    const col = o.col, fwd = [s, 0, c];
+    const col = o.col, fwd = [s, 0, c], rgt = [c, 0, -s];
     // ひじ: 肩と手の距離が腕の長さより短ければ、外側・下側へ曲げる
     const ARM = 0.3;
     const elbow = (sh, h) => {
@@ -1302,52 +1303,190 @@
     const shinL = mix(kneeL, w.fl, 0.45), shinR = mix(kneeR, w.fr, 0.45);
     const toe = f => add(f, add(mul(fwd, 0.13), [0, 0.03, 0]));
     const chest = mix(w.hip, w.sh, 0.55);
-    const segs = [
-      [w.fl, toe(w.fl), 0.1, SHOE], [w.fr, toe(w.fr), 0.1, SHOE],
-      [hipL, kneeL, 0.14, col.pants], [kneeL, shinL, 0.12, col.pants], [shinL, w.fl, 0.095, col.sock],
-      [hipR, kneeR, 0.14, col.pants], [kneeR, shinR, 0.12, col.pants], [shinR, w.fr, 0.095, col.sock],
-      [w.hip, chest, 0.28, col.shirt], [chest, w.sh, 0.32, col.shirt], [shL, shR, 0.12, col.shirt],
-      [add(w.hip, [0, 0.01, 0]), add(w.hip, [0, 0.05, 0]), 0.285, col.belt],
-      [w.sh, w.head, 0.08, SKIN],
-      [shL, elL, 0.095, col.shirt], [elL, w.hl, 0.075, col.under],
-      [shR, elR, 0.095, col.shirt], [elR, w.hr, 0.075, col.under],
-    ];
+    const cc = toCam(chest);
+    if (cc[2] <= NEAR) return;
+    // 近くの選手だけ輪郭線や顔・文字を描く（遠くでは黒くつぶれるため）
+    const big = cam.f * 0.3 / cc[2] > 7;
+    const view = norm(sub(cam.pos, chest)), facing = dot(fwd, view);
+    const sees = d => dot(norm(d), view) > 0.12;
+    const loc = l => toW(add(J.hip, l));   // 腰からの相対位置
+    const catcher = o.mitt;
     ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
-    // 近くの選手だけ輪郭線を付ける（遠くでは黒くつぶれるため）
-    const sc = toCam(w.sh), big = sc[2] > NEAR && cam.f * 0.3 / sc[2] > 7;
-    if (big) for (const g of segs) limb(g[0], g[1], g[2] + 0.035, OUTLINE);
-    for (const g of segs) limb(g[0], g[1], g[2], g[3]);
-    const dot2 = (p, r, fill) => {
+
+    const draw = segs => {
+      if (big) for (const g of segs) limb(g[0], g[1], g[2] + 0.035, OUTLINE);
+      for (const g of segs) limb(g[0], g[1], g[2], g[3]);
+    };
+    const dot2 = (p, r, fill, line = big) => {
       const pc = toCam(p);
       if (pc[2] <= NEAR) return null;
       const ps = proj(pc), pr = Math.max(1, cam.f * r / pc[2]);
-      if (big) { ctx.fillStyle = OUTLINE; ctx.beginPath(); ctx.arc(ps[0], ps[1], pr + cam.f * 0.018 / pc[2], 0, PI * 2); ctx.fill(); }
+      if (line) { ctx.fillStyle = OUTLINE; ctx.beginPath(); ctx.arc(ps[0], ps[1], pr + cam.f * 0.018 / pc[2], 0, PI * 2); ctx.fill(); }
       ctx.fillStyle = fill;
       ctx.beginPath(); ctx.arc(ps[0], ps[1], pr, 0, PI * 2); ctx.fill();
       return [ps, pr];
     };
-    // 手
-    if (!o.glove) dot2(w.hl, 0.045, SKIN);
-    if (!o.ball) dot2(w.hr, 0.045, SKIN);
-    // 頭と帽子（つばは向いている方向へ）
-    const brimA = add(w.head, [fwd[0] * 0.06, 0.05, fwd[2] * 0.06]), brimB = add(w.head, [fwd[0] * 0.19, 0.035, fwd[2] * 0.19]);
-    const hd = dot2(w.head, 0.115, SKIN);
+    const poly = (pts, fill) => {
+      if (!polyPath(pts)) return;
+      ctx.fillStyle = fill; ctx.fill();
+      if (big) { ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1, cam.f * 0.016 / cc[2]); ctx.stroke(); }
+    };
+    // 体の表面に貼る文字（左右の端を投影して、遠近と向きに合わせて伸縮）
+    const decal = (ctr, hw, h, text, fill, stroke) => {
+      const a = toCam(add(ctr, mul(rgt, hw))), b = toCam(sub(ctr, mul(rgt, hw)));
+      if (a[2] <= NEAR || b[2] <= NEAR) return;
+      let p1 = proj(a), p2 = proj(b);
+      if (p2[0] < p1[0]) [p1, p2] = [p2, p1];
+      const wpx = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+      if (wpx < 6) return;
+      const fs = cam.f * h / ((a[2] + b[2]) / 2);
+      ctx.save();
+      ctx.translate((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2);
+      ctx.rotate(Math.atan2(p2[1] - p1[1], p2[0] - p1[0]));
+      ctx.font = `900 ${fs}px "Arial Black", Impact, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.scale(wpx / ctx.measureText(text).width, 1);
+      if (stroke) { ctx.lineWidth = fs * 0.16; ctx.strokeStyle = stroke; ctx.strokeText(text, 0, 0); }
+      ctx.fillStyle = fill; ctx.fillText(text, 0, 0);
+      ctx.restore();
+    };
+
+    // ---- 脚（捕手はレガース） ----
+    const legs = [[w.fl, toe(w.fl), 0.1, SHOE], [w.fr, toe(w.fr), 0.1, SHOE],
+      [hipL, kneeL, 0.14, col.pants], [hipR, kneeR, 0.14, col.pants]];
+    if (catcher) legs.push([kneeL, w.fl, 0.13, GEAR], [kneeR, w.fr, 0.13, GEAR]);
+    else legs.push([kneeL, shinL, 0.12, col.pants], [shinL, w.fl, 0.095, col.sock],
+      [kneeR, shinR, 0.12, col.pants], [shinR, w.fr, 0.095, col.sock]);
+    draw(legs);
+
+    // ---- 腕（カメラから見て胴体の奥にある腕は先に描く） ----
+    const arm = (sh, el, h, left) => ({
+      z: toCam(el)[2],
+      draw() {
+        draw([[sh, el, 0.095, col.shirt], [el, h, 0.075, col.under]]);
+        if (left && o.glove) {
+          const r = o.mitt ? 0.13 : 0.095;
+          dot2(h, r, '#8a5427');
+          dot2(add(h, [0, 0.01, 0]), r * 0.62, '#a8693a', false);   // 革の明るい面
+          dot2(add(h, [0, 0.01, 0]), r * 0.22, '#6a3d1c', false);   // ポケット
+        } else if (!left && o.ball) {
+          dot2(h, 0.04, '#fff');
+        } else dot2(h, 0.045, o.bat ? col.under : SKIN);   // 打者は手袋
+      },
+    });
+    const arms = [arm(shL, elL, w.hl, true), arm(shR, elR, w.hr, false)].sort((a, b) => b.z - a.z);
+    const back = arms.filter(a => a.z > cc[2] + 0.04), front = arms.filter(a => a.z <= cc[2] + 0.04);
+    for (const a of back) a.draw();
+
+    // ---- 胴体 ----
+    const bz = 0.06;
+    draw([[loc([0, 0.1, 0]), chest, 0.28, col.shirt], [chest, w.sh, 0.32, col.shirt], [shL, shR, 0.12, col.shirt], [w.sh, w.head, 0.08, SKIN]]);
+    // 腰（パンツ）でシャツの裾を隠す
+    draw([[loc([-0.06, 0, 0]), loc([0.06, 0, 0]), 0.17, col.pants]]);
+    // ベルト（腰回りの帯）
+    if (big) limb(loc([-0.14, bz, 0]), loc([0.14, bz, 0]), 0.07, OUTLINE);
+    limb(loc([-0.13, bz, 0]), loc([0.13, bz, 0]), 0.045, col.belt);
+    const torsoUp = mix(J.hip, J.sh, 0.62);
+    const surf = (z, y = 0) => toW(add(torsoUp, [0, y, z]));
+    if (catcher && facing > 0) {
+      // プロテクター
+      poly([loc([-0.15, 0.12, 0.15]), loc([0.15, 0.12, 0.15]), toW(add(J.sh, [0.17, -0.03, 0.12])), toW(add(J.sh, [-0.17, -0.03, 0.12]))], GEAR);
+    } else if (big && facing > 0.2) {
+      // 前立てのパイピングと胸マーク
+      limb(toW(add(J.sh, [0, -0.02, 0.15])), loc([0, bz + 0.03, 0.15]), 0.012, col.sock);
+      decal(surf(0.165, 0.02), 0.13, 0.085, col.team, col.sock, 'rgba(255,255,255,0.9)');
+    } else if (big && facing < -0.2 && o.num != null) {
+      // 背番号
+      decal(surf(-0.165, 0.04), 0.07 + 0.035 * String(o.num).length, 0.17, String(o.num), col.sock, OUTLINE);
+    }
+
+    // ---- 頭 ----
+    const hw = w.head;
+    // 耳は頭の前に描くと顔に重なるので先に描く。ヘルメットのイヤーフラップ（投手側=左）は後で上から描く
+    const flapSide = col.helmet && !catcher ? -1 : 0;
+    const ear = sgn => {
+      const d = mul(rgt, sgn);
+      if (!big || !sees(d)) return;
+      if (sgn === flapSide) return;
+      dot2(add(hw, add(mul(d, 0.105), [0, -0.01, 0])), 0.03, SKIN);
+    };
+    const flap = () => {
+      const d = mul(rgt, flapSide);
+      if (!flapSide || !sees(add(d, mul(fwd, 0.3)))) return;
+      dot2(add(hw, add(add(mul(d, 0.08), mul(fwd, 0.01)), [0, -0.025, 0])), 0.068, col.cap);
+    };
+    // つば（後ろ向きのときは頭の陰に隠れるので先に描く）
+    const brim = () => {
+      if (catcher) return;
+      const by = col.helmet ? 0.035 : 0.055, near = col.helmet ? 0.09 : 0.07, far = col.helmet ? 0.17 : 0.21;
+      const at = (f, r, y) => add(hw, add(add(mul(fwd, f), mul(rgt, r)), [0, y, 0]));
+      poly([at(near, -0.105, by), at(near, 0.105, by), at(far, 0.075, by - 0.02), at(far, -0.075, by - 0.02)], col.cap);
+    };
+    if (facing < 0) brim();
+    ear(1); ear(-1);
+    const hd = dot2(hw, 0.115, SKIN);
     if (hd) {
-      const [hs, hr] = hd, cr = col.helmet ? 1.18 : 1.06, cy = hs[1] - hr * (col.helmet ? 0.02 : 0.12);
-      ctx.fillStyle = col.cap;
+      const [hs, hr] = hd;
+      // 横・後ろから見ると髪が見える
+      if (big && facing < 0.4 && !col.helmet) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(hs[0], hs[1], hr, 0, PI * 2); ctx.clip();
+        // 後頭部の方向へずらした楕円を頭の形で切り抜く（下端は丸く、襟足は肌を見せる）
+        const bc = toCam(add(hw, mul(fwd, -0.07)));
+        const bp = bc[2] > NEAR ? proj(bc) : hs;
+        ctx.fillStyle = HAIR;
+        ctx.beginPath(); ctx.ellipse(bp[0], hs[1] - hr * 0.3, hr * 0.92, hr * 0.85, 0, 0, PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      // 目（顔がこちらを向いているときだけ）
+      if (big && facing > 0.1) {
+        ctx.fillStyle = '#1d1a1f';
+        for (const sg of [-1, 1]) {
+          const ed = add(mul(fwd, 0.9), mul(rgt, 0.42 * sg));
+          if (!sees(ed)) continue;
+          const ec = toCam(add(hw, add(add(mul(fwd, 0.1), mul(rgt, 0.04 * sg)), [0, -0.005, 0])));
+          if (ec[2] <= NEAR) continue;
+          const es = proj(ec), er = cam.f * 0.016 / ec[2];
+          ctx.beginPath(); ctx.ellipse(es[0], es[1], er * 0.8, er * 1.15, 0, 0, PI * 2); ctx.fill();
+        }
+        // 頬の赤み
+        ctx.fillStyle = 'rgba(230,110,90,0.22)';
+        for (const sg of [-1, 1]) {
+          if (!sees(add(fwd, mul(rgt, 0.8 * sg)))) continue;
+          const kc = toCam(add(hw, add(add(mul(fwd, 0.085), mul(rgt, 0.06 * sg)), [0, -0.04, 0])));
+          if (kc[2] <= NEAR) continue;
+          const ks = proj(kc);
+          ctx.beginPath(); ctx.arc(ks[0], ks[1], cam.f * 0.022 / kc[2], 0, PI * 2); ctx.fill();
+        }
+      }
+      // 帽子・ヘルメットのドーム
+      const cr = col.helmet || catcher ? 1.16 : 1.06, cy = hs[1] - hr * (col.helmet || catcher ? 0.04 : 0.14);
+      ctx.fillStyle = catcher ? GEAR : col.cap;
       ctx.beginPath(); ctx.arc(hs[0], cy, hr * cr, PI, 0); ctx.closePath(); ctx.fill();
-      if (big) { ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1, hr * 0.14); ctx.stroke(); }
-      // つやのハイライト
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.beginPath(); ctx.ellipse(hs[0] - hr * 0.35, cy - hr * 0.6, hr * 0.3, hr * 0.14, -0.4, 0, PI * 2); ctx.fill();
-      if (big) limb(brimA, brimB, 0.05, OUTLINE);
-      limb(brimA, brimB, 0.03, col.cap);
+      if (big) { ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1, hr * 0.12); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';   // つや
+      ctx.beginPath(); ctx.ellipse(hs[0] - hr * 0.38, cy - hr * 0.6, hr * 0.3, hr * 0.13, -0.45, 0, PI * 2); ctx.fill();
+      // 帽子のマーク
+      if (big && !col.helmet && !catcher && facing > 0.3) {
+        ctx.fillStyle = '#fff';
+        ctx.font = `900 ${hr * 0.62}px "Arial Black", sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(col.team[0], hs[0], cy - hr * 0.45);
+      }
+      // 捕手のマスク
+      if (catcher && facing > 0.2 && big) {
+        ctx.strokeStyle = '#2b2f38'; ctx.lineWidth = Math.max(1, hr * 0.12);
+        ctx.beginPath(); ctx.roundRect(hs[0] - hr * 0.8, hs[1] - hr * 0.35, hr * 1.6, hr * 1.25, hr * 0.4); ctx.stroke();
+        ctx.beginPath();
+        for (const k of [0.15, 0.5]) { ctx.moveTo(hs[0] - hr * 0.8, hs[1] + hr * k); ctx.lineTo(hs[0] + hr * 0.8, hs[1] + hr * k); }
+        ctx.moveTo(hs[0], hs[1] - hr * 0.35); ctx.lineTo(hs[0], hs[1] + hr * 0.9);
+        ctx.stroke();
+      }
     }
-    if (o.glove) {
-      dot2(w.hl, o.mitt ? 0.13 : 0.09, '#8a5427');
-      dot2(add(w.hl, [0, 0.015, 0]), o.mitt ? 0.07 : 0.045, '#a8693a');   // 革の明るい面
-    }
-    if (o.ball) dot2(w.hr, 0.04, '#fff');
+    flap();
+    if (facing >= 0) brim();
+
+    for (const a of front) a.draw();
     ctx.globalAlpha = 1;
   }
 
@@ -1377,7 +1516,7 @@
       hip: [-0.08 * sw, 0.88, -0.05], sh: [-0.1 * sw, 1.38, -0.02],
       hl: [0, 0, 0], hr: [0, 0, 0], head: [-0.04 - 0.08 * sw, 1.58, 0.02],
     };
-    drawPerson({ x: BATTER_X, z: 0, face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h } });
+    drawPerson({ x: BATTER_X, z: 0, face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h }, bat: true, num: mode === 'pitch' ? game.batter % LINEUP.length + 1 : 51 });
     const mid = add(bp.h, mul(bp.d, 0.42)), tip = add(bp.h, mul(bp.d, 0.86));
     limb(bp.h, mid, 0.035, '#c9995e');
     limb(mid, tip, 0.065, '#d9b07a');
@@ -1584,7 +1723,7 @@
       else if (st === 'play' || st === 'between') J = poseJoints('stand');
       else J = poseJoints('ready');
       if (f.hasBall) ball = true;
-      push([f.x, 1, f.z], () => drawPerson({ x: f.x, z: f.z, face: f.face, J, col: DEF_COL, alpha, glove, mitt, ovW, ball }));
+      push([f.x, 1, f.z], () => drawPerson({ x: f.x, z: f.z, face: f.face, J, col: DEF_COL, alpha, glove, mitt, ovW, ball, num: UNI_NUM[f.id] }));
     });
 
     for (const r of runners) {
