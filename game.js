@@ -1297,8 +1297,9 @@
   // =========================================================
   const SKIN = '#e9b48a';
   // under: アンダーシャツ, sock: ストッキング・文字色, team: 胸マーク, helmet: 打者・走者はヘルメット
-  const DEF_COL = { shirt: '#b4bcc8', pants: '#b4bcc8', cap: '#c0262d', under: '#a51f27', sock: '#c0262d', belt: '#7c1219', team: 'BLAZE' };
-  const BAT_COL = { shirt: '#f4f6fa', pants: '#f4f6fa', cap: '#1a2b5e', under: '#1a2b5e', sock: '#1a2b5e', belt: '#14204a', team: 'STARS', helmet: true };
+  // 実在球団と似た配色を避ける（守備: ウォームグレー×深緑、打撃: アイボリー×紫）
+  const DEF_COL = { shirt: '#c9c4b8', pants: '#c9c4b8', cap: '#0f6b5f', under: '#0c5a50', sock: '#0f6b5f', belt: '#083d36', team: 'BLAZE' };
+  const BAT_COL = { shirt: '#f3ecdb', pants: '#f3ecdb', cap: '#55307a', under: '#55307a', sock: '#55307a', belt: '#3a1f56', team: 'STARS', helmet: true };
   const OUTLINE = 'rgba(16,22,38,0.9)', SHOE = '#1b1d22', GEAR = '#2c3446', HAIR = '#2a1d16';
   const UNI_NUM = { P: 18, C: 27, '1B': 3, '2B': 4, SS: 6, '3B': 5, LF: 7, CF: 8, RF: 9 };
 
