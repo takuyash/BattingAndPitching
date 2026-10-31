@@ -45,17 +45,37 @@
         <button data-mode="bat" class="sel">バッティング</button>
         <button data-mode="pitch">ピッチング</button>
         <button data-mode="practice">投球練習</button>
+        <button data-mode="match">試合</button>
       </div>
-      <p class="lead bat-only">3アウトになるまでに何点取れるか挑戦！</p>
+      <p class="lead bat-only no-vs">3アウトになるまでに何点取れるか挑戦！</p>
       <p class="lead pitch-only match-only">3イニングを投げ抜け！ 変化球を操って失点を抑えよう</p>
       <p class="lead practice-only">ブルペンで投げ込み！ 全球種を好きなだけ試せる</p>
+      <p class="lead vs-only">CPUと対戦！ 表は打って点を取り、裏は投げて抑えよう</p>
+      <div class="vs-only">
+        <div class="sel-lbl">イニング数</div>
+        <div class="diffs" id="innSel">
+          <button data-inn="1">1</button>
+          <button data-inn="2">2</button>
+          <button data-inn="3" class="sel">3</button>
+          <button data-inn="5">5</button>
+          <button data-inn="7">7</button>
+          <button data-inn="9">9</button>
+        </div>
+      </div>
       <div class="diffs match-only" id="diffSel">
         <button data-diff="easy">かんたん</button>
         <button data-diff="normal" class="sel">ふつう</button>
         <button data-diff="hard">むずかしい</button>
       </div>
       <button id="startBtn" class="start">プレイボール</button>
-      <ul class="howto bat-only">
+      <ul class="howto vs-only">
+        <li>先攻は自分。<b>表はバッティング</b>、<b>裏はピッチング</b>で攻守が交互に入れ替わる</li>
+        <li>試合前に、ストレート以外で使う球種を<b>5つ</b>選ぶ</li>
+        <li>スタミナは試合を通して持ち越し。イニングが変わると少し回復する</li>
+        <li>最終回の裏にCPUが勝ち越すとサヨナラ負け。同点なら引き分け</li>
+        <li>操作はバッティング・ピッチングモードと同じ</li>
+      </ul>
+      <ul class="howto bat-only no-vs">
         <li class="pc-only"><b>マウス</b>（矢印キー）で黄色いミートカーソルを動かす</li>
         <li class="pc-only"><b>クリック</b>（スペース）でスイング</li>
         <li class="touch-only"><b>画面をなぞって</b>黄色いミートカーソルを動かす（指でゾーンが隠れません）</li>
@@ -95,6 +115,7 @@
       <h2>ゲームセット</h2>
       <div class="result-runs"><small id="ovLbl">得点</small><span id="ovRuns">0</span><b id="ovUnit">点</b></div>
       <div id="ovNote"></div>
+      <div id="ovLine"></div>
       <div class="result-stats">
         <div><span id="ovK1"></span><b id="ovV1">0</b></div>
         <div><span id="ovK2"></span><b id="ovV2">0</b></div>
