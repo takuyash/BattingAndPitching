@@ -134,6 +134,9 @@
   const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥', '@'];
   // P_VMAX: ストレートの最高球速, P_BRK: 変化量の倍率, P_BEND: 曲がり始めの遅さ（大きいほど手元で鋭く曲がる）
   const P_VMAX = 148, P_BRK = 2.1, P_BEND = 3, INNINGS = 3;
+  // 落ちる球の倍率は P_BRK より小さくする（落ち幅が大きすぎると、途中のストレート軌道が上向きになり浮いてから落ちて見える）
+  const P_DROP = 1.3;
+  const dropK = d => (d < 0 ? P_DROP : P_BRK);
   let mode = 'bat', selDiff = 'normal';
   // 投球練習: ピッチングモードの一種（打者なし・全球種・スタミナ無限）
   let practice = false;
@@ -559,7 +562,7 @@
   }
   function idealPitch(name) {
     const def = PITCHES[name];
-    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0], P_BEND, (def.drop || 0) * P_BRK);
+    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0], P_BEND, (def.drop || 0) * dropK(def.drop));
   }
   function makePlayerPitch() {
     const def = PITCHES[selPitch], acc = meter.acc, sta = stamina / 100;
@@ -573,7 +576,7 @@
       p.wob = { ax: rand(0.04, 0.08) * P_BRK * (Math.random() < 0.5 ? -1 : 1), ay: rand(0.03, 0.06) * P_BRK, f: rand(2, 3.5) * PI * 2, ph: rand(0, PI * 2) };
       return p;
     }
-    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND, (def.drop || 0) * P_BRK * rand(0.9, 1.1));
+    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND, (def.drop || 0) * dropK(def.drop) * rand(0.9, 1.1));
   }
 
   // CPU打者: 見えたコースと予想タイミングからスイングを決める
@@ -588,7 +591,9 @@
     // 真ん中から離れるほど芯で捉えにくい
     const loc = Math.min(1.5, Math.hypot(cross[0] / 0.3, (cross[1] - 0.78) / 0.4));
     const sd = 0.022 + 0.07 * loc;
-    const perc = [cross[0] - p.brk[0] * mis + gauss() * sd, cross[1] - (p.brk[1] + p.drop) * mis + gauss() * sd];
+    // 落ち幅も倍率で割り戻して、P_DROP を変えても騙されやすさが変わらないようにする
+    const misD = mis * P_BRK / dropK(p.drop);
+    const perc = [cross[0] - p.brk[0] * mis + gauss() * sd, cross[1] - p.brk[1] * mis - p.drop * misD + gauss() * sd];
     const two = game.strikes >= 2, wait = game.balls === 3 && !two;
     let ps;
     if (inZone(perc[0], perc[1])) ps = two ? 0.92 : wait ? 0.55 : game.balls + game.strikes === 0 ? 0.6 : 0.75;
