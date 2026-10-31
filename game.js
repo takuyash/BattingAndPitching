@@ -1658,7 +1658,7 @@
     const cc = toCam([cursor.x, cursor.y, 0]);
     if (cc[2] < NEAR) return;
     const c = proj(cc);
-    const r = cam.f * D.ry * 0.28 / cc[2];
+    const r = cam.f * D.ry * 0.34 / cc[2];
     ctx.strokeStyle = 'rgba(255,240,150,0.9)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, PI * 2); ctx.stroke();
     ctx.beginPath();
