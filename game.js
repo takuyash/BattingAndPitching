@@ -29,8 +29,8 @@
   let W = 0, H = 0;
   const COARSE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
   function resize() {
-    // スマホは描画負荷を抑えるため解像度を少し落とす
-    const dpr = Math.min(window.devicePixelRatio || 1, COARSE ? 1.5 : 2);
+    // 高精細な画面でも描画負荷を抑えるため 2 倍までにする（スマホを 1.5 倍に落とすとぼやけて見える）
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
