@@ -65,9 +65,9 @@
   //  難易度・球種
   // =========================================================
   const DIFFS = {
-    easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.23, ry: 0.14,  win: 0.21,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
-    normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.19, ry: 0.115, win: 0.165, field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート'] },
-    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.16, ry: 0.095, win: 0.13,  field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール'] },
+    easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.23, ry: 0.14,  win: 0.32,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
+    normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.19, ry: 0.115, win: 0.26,  field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート'] },
+    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.16, ry: 0.095, win: 0.205, field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール'] },
   };
   // drop: 手元で落ちる量（途中まではストレートと同じ軌道を通り、本塁の直前で s^DROP_BEND で落ちる。正なら浮き上がる）
   const DROP_BEND = 5;
@@ -420,6 +420,7 @@
   const cpuMem = { kmh: 146, last: '' };   // 打者が覚えている直近の球速・球種
 
   const SWING_LEAD = 0.12;    // スイング開始からミートまでの時間
+  const HIT_LEAD = 0.05;      // 打撃判定で使うボタンからミートまでの時間（体感に合わせて短め）
   const WINDUP = 1.25;
   const REL = [-0.4, 1.85, 18.3 - 0.85];
 
@@ -552,6 +553,8 @@
     swingStart = now;
     swingCY = cursor.y;
     sfx.swing();
+    // ボールが本塁を通過した後の振り遅れでも、許容幅の内なら当てる
+    if (pitch.crossed) tryHit(pitch.cross, pitch.T - (pitch.swingT + HIT_LEAD));
   }
 
   // =========================================================
@@ -668,6 +671,7 @@
     D = (mode === 'pitch' ? PDIFFS : DIFFS)[selDiff];
     game.outs = game.balls = game.strikes = 0;
     runners = []; pitch = null; play = null; ballPos = null; ballTrail = []; lastCross = null; meter = null;
+    $('pitchInfo').classList.remove('show');
     if (mode === 'pitch' && game.inning > 1) stamina = Math.min(100, stamina + 8);
     startHalf();
   }
@@ -753,7 +757,6 @@
     pitch.vel = [rand(0.8, 1.6), rand(1.0, 2.0), rand(2.0, 3.5)];
     lastCross = { p: pitch.cross, strike: false };
     game.state = 'hbp'; game.st = 0;
-    $('pitchInfo').classList.remove('show');
   }
 
   // 投球練習: カウントは進めず、球速と狙いからのズレを見せる（狙いのカーソルは投球中は動かない）
@@ -774,7 +777,6 @@
 
   function toBetween(dur) {
     game.state = 'between'; game.st = 0; game.betweenDur = dur;
-    $('pitchInfo').classList.remove('show');
   }
 
   // =========================================================
@@ -805,7 +807,6 @@
     ballPos = cp.slice();
     ballTrail = [];
     game.state = 'hitstop'; game.st = 0;
-    $('pitchInfo').classList.remove('show');
     return true;
   }
 
@@ -924,6 +925,7 @@
         pl.thr = { start: best.t + 0.7, to, dur };
         pl.endT = pl.thr.start + dur + 0.7;
       } else pl.endT = best.t + 1.6;
+      if (fair && deep && game.outs < 2) tagUp(pl, best.t);
       if (fair) runners.push({ b: 0, target: 1, speed: 0.27, delay: 0.5, out: true, batter: true, spd: batterSpd() });
     } else if (!fair) {
       pl.kind = 'foul';
@@ -961,6 +963,7 @@
         if (runT(k) < thr - 0.15) n = k; else break;
       }
       pl.bases = n;
+      if (n === 0 && tryDoublePlay(pl, f, best)) return pl;
       pl.kind = n === 0 ? 'groundout' : 'hit';
       const tb = n === 0 ? BASES[1] : BASES[Math.min(n + 1, 4)];
       const to = [tb[0], 1.3, tb[2]];
@@ -980,6 +983,64 @@
     if (runners.some(r => r.batter)) batterVisible = false;
     return pl;
   }
+  // 併殺: 一塁走者がいて、内野手（投手含む）が素早く捕れたゴロなら 二塁→一塁 と転送して2アウト
+  function tryDoublePlay(pl, f, best) {
+    if (game.outs >= 2 || f.of || f.id === 'C') return false;
+    const live = runners.filter(r => !r.out);
+    const on = b => live.find(r => Math.round(r.b) === b);
+    const r1 = on(1);
+    if (!r1) return false;
+    const to2 = [BASES[2][0], 1.3, BASES[2][2]], to1 = [BASES[1][0], 1.3, BASES[1][2]];
+    const start = best.t + 0.55;
+    const dur2 = Math.max(0.3, Math.hypot(to2[0] - best.pos[0], to2[2] - best.pos[2]) / 30);
+    const end2 = start + dur2;
+    const relay = end2 + 0.45;
+    const dur1 = Math.hypot(to1[0] - to2[0], to1[2] - to2[2]) / 30;
+    const end1 = relay + dur1;
+    const r1Arrive = 0.3 + 1 / (0.27 * (r1.spd || 1));
+    if (r1Arrive < end2 + 0.1 || end1 > runT(1) - 0.3) return false;   // どちらかが間に合わなければ通常のゴロ
+
+    pl.kind = 'dp';
+    pl.thr = { start, to: to2, dur: dur2 };
+    pl.thr2 = { start: relay, to: to1, dur: dur1 };
+    const ev = (t, fn) => pl.events.push({ t, fn, done: false });
+    ev(best.t, () => catchBall(best.i));
+    ev(end2, () => { sfx.glove(); showMsg('アウト', '二塁フォースアウト', 'bad', 1.2); });
+    ev(end1, () => { sfx.glove(); showMsg('ダブルプレー', POS_NAME[f.id] + 'ゴロ', 'bad', 2); });
+    pl.liveEnd = 0;
+    pl.endT = end1 + 1.2;
+    // 一塁走者は二塁でアウト。無死なら押し出される走者は1つ進む（2アウト目で攻撃終了ならそのまま）
+    r1.out = true; r1.target = 2; r1.speed = 0.27; r1.delay = 0.3;
+    if (game.outs === 0) {
+      const r2 = on(2);
+      if (r2) {
+        r2.target = 3; r2.speed = 0.27; r2.delay = 0.3;
+        const r3 = on(3);
+        if (r3) { r3.target = 4; r3.speed = 0.27; r3.delay = 0.3; }
+      }
+    }
+    runners.push({ b: 0, target: 1, speed: 0.27, delay: 0.5, out: true, batter: true, spd: batterSpd() });
+    batterVisible = false;
+    return true;
+  }
+  // 外野フライのタッチアップ: 捕球後に塁を離れ、飛距離が十分なら次の塁へ進む
+  // （前の走者が進まない限り後ろの走者は進めない）
+  const TAG_DIST = { 3: 50, 2: 72, 1: 95 };   // 元の塁ごとに必要な飛距離 (m)
+  function tagUp(pl, catchT) {
+    const live = runners.filter(r => !r.out).sort((a, b) => b.b - a.b);
+    let open = true, lead = null, arrive = 0;
+    for (const r of live) {
+      const from = Math.round(r.b);
+      if (!open || pl.dist < TAG_DIST[from]) { open = false; continue; }
+      r.target = from + 1; r.speed = 0.3; r.delay = catchT + 0.15;
+      arrive = Math.max(arrive, r.delay + 1 / (r.speed * (r.spd || 1)));
+      if (!lead) lead = r;
+    }
+    if (!lead) return;
+    const scored = lead.target >= 4;
+    pl.events.push({ t: arrive, done: false, fn: () => showMsg(scored ? '犠牲フライ' : 'タッチアップ', scored ? 'タッチアップで1点' : '進塁', scored ? 'good' : 'neutral', 1.8) });
+    pl.endT = Math.max(pl.endT, arrive + 0.6);
+  }
   function advanceAll(n) {
     for (const r of runners) if (!r.out) { r.target = Math.min(4, r.b + n); r.speed = 0.27; r.delay = 0.3; }
     runners.push({ b: 0, target: n, speed: 0.27, delay: 0.5, out: false, batter: true, spd: batterSpd() });
@@ -993,6 +1054,12 @@
     const pl = play;
     if (pl.holder >= 0) {
       const f = fielders[pl.holder];
+      if (pl.thr2 && pl.t >= pl.thr2.start) {   // 併殺の一塁への転送
+        const u = clamp((pl.t - pl.thr2.start) / pl.thr2.dur, 0, 1);
+        const p = mix(pl.thr.to, pl.thr2.to, u);
+        p[1] += u * (1 - u) * 4 * Math.min(5, pl.thr2.dur * 2);
+        return p;
+      }
       if (pl.thr && pl.t >= pl.thr.start) {
         if (!pl.thr.from) { pl.thr.from = [f.x, 1.7, f.z]; f.hasBall = false; }
         const u = clamp((pl.t - pl.thr.start) / pl.thr.dur, 0, 1);
@@ -1013,6 +1080,7 @@
       game.balls = game.strikes = 0;
       game.batter++;
       if (k === 'flyout' || k === 'groundout') game.outs++;
+      if (k === 'dp') game.outs += 2;
       if (k === 'hit' || k === 'hr') {
         game.hits++;
         if (k === 'hr') game.hrs++;
@@ -1188,11 +1256,13 @@
             if (!pitch.swung) cpuSwing(now);
             if (tryHit(pitch.cross, cpu.early, cpu.bat)) return;
           }
-        } else if (pitch.swung && tryHit(pitch.cross, pitch.T - (pitch.swingT + SWING_LEAD))) return;
+        } else if (pitch.swung && tryHit(pitch.cross, pitch.T - (pitch.swingT + HIT_LEAD))) return;
         if (!pitch.swung && hitsBatter(pitch.cross)) { startHBP(); return; }
       }
       ballPos = pitchPos(pitch, Math.min(s, pitch.sEnd));
-      if (s >= pitch.sEnd) endPitch();
+      // バッティングでまだ振っていなければ、振り遅れの許容幅が終わるまで判定を待つ
+      const lateEnd = pitch.T + D.win - HIT_LEAD;
+      if (s >= pitch.sEnd && (mode !== 'bat' || pitch.swung || pitch.t >= lateEnd)) endPitch();
     } else if (st === 'hbp') {
       const v = pitch.vel;
       v[1] -= G * dt;
@@ -1662,7 +1732,7 @@
     const cc = toCam([cursor.x, cursor.y, 0]);
     if (cc[2] < NEAR) return;
     const c = proj(cc);
-    const r = cam.f * D.ry * 0.34 / cc[2];
+    const r = cam.f * D.ry * 0.5 / cc[2];
     ctx.strokeStyle = 'rgba(255,240,150,0.9)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, PI * 2); ctx.stroke();
     ctx.beginPath();
@@ -1847,6 +1917,7 @@
   function resetGame() {
     Object.assign(game, { outs: 0, balls: 0, strikes: 0, runs: 0, hits: 0, hrs: 0, best: 0, inning: 1, ks: 0, bb: 0, pitches: 0, batter: 0 });
     runners = []; pitch = null; play = null; ballPos = null; ballTrail = [];
+    $('pitchInfo').classList.remove('show');
     batterVisible = !practice; swingStart = -1;
     stamina = 100; meter = null;
     Object.assign(prac, { strikes: 0, perfect: 0, best: 0, miss: 0 });
