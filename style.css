@@ -131,6 +131,29 @@ body.pmode #pitchInfo { display: none; }
 }
 #batterInfo b { color: #ffd84a; }
 
+/* 一時停止ボタン（上部中央） */
+#pauseBtn {
+  position: absolute;
+  left: 50%;
+  top: calc(14px + env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: #cfd8e6;
+  background: rgba(10, 20, 35, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+}
+@media (max-width: 600px) {
+  #pauseBtn { top: calc(8px + env(safe-area-inset-top)); width: 36px; height: 36px; }
+}
+
 /* 投球練習: 終了ボタン（打者情報の位置） */
 #quitBtn {
   position: absolute;

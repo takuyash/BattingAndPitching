@@ -409,6 +409,8 @@
   let pitch = null, play = null;
   let ballPos = null, ballTrail = [];
   let swingStart = -1, swingCY = 0.8, batterVisible = true;
+  let paused = false, pauseAt = 0, pauseOff = 0;
+  const clock = () => (paused ? pauseAt : performance.now()) - pauseOff;   // 一時停止中は止まるゲーム内時計
   let lastCross = null;
   let flash = 0;
   const particles = [];
@@ -547,7 +549,7 @@
 
   function swing() {
     if (game.state !== 'pitch' || pitch.swung) return;
-    const now = performance.now();
+    const now = clock();
     pitch.swung = true;
     pitch.swingT = (now - pitch.t0) / 1000;
     swingStart = now;
@@ -1157,13 +1159,14 @@
   // ピッチャー視点では画面の左右と x 軸が逆になる
   const sideSign = () => (mode === 'pitch' ? -1 : 1);
   function action() {
+    if (paused) return;
     ac();
     if (mode === 'bat') swing();
     else if (game.state === 'aim') throwPitch();
     else if (game.state === 'windup') lockMeter(false);
   }
   function updateCursorFromMouse() {
-    if (!mouse || !canAim()) return;
+    if (!mouse || paused || !canAim()) return;
     updateBasis();
     const dx = (mouse.x - cam.cx) / cam.f, dy = -(mouse.y - cam.cy) / cam.f;
     const dir = add(add(cam.fwd, mul(cam.right, dx)), mul(cam.up, dy));
@@ -1190,7 +1193,7 @@
   }, { passive: false });
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (!drag) return;
+    if (!drag || paused) return;
     for (const t of e.changedTouches) {
       if (t.identifier !== drag.id) continue;
       if (mode === 'bat' || canAim()) {
@@ -1213,6 +1216,8 @@
   swingBtn.addEventListener('touchcancel', release);
   swingBtn.addEventListener('mousedown', e => { e.preventDefault(); action(); });
   window.addEventListener('keydown', e => {
+    if (e.code === 'KeyP' || (e.code === 'Escape' && (!practice || paused))) { togglePause(); return; }
+    if (paused) return;
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
     if (e.code === 'Escape') quitPractice();
@@ -1640,7 +1645,7 @@
   function batPose() {
     const READY_H = [-0.72, 1.3, -0.22], READY_D = norm([0.25, 0.85, -0.45]);
     if (swingStart < 0) return { h: READY_H, d: READY_D, p: 0 };
-    const p = (performance.now() - swingStart) / 300;
+    const p = (clock() - swingStart) / 300;
     const cy = clamp(swingCY, 0.3, 1.4);
     const CONTACT_H = [-0.52, cy + 0.03, 0.02];
     const FINISH_H = [-0.72, 1.35, 0.22];
@@ -2073,12 +2078,30 @@
     if (vs) { mode = 'bat'; applyModeUI(); }
   });
 
+  // 一時停止: 止めている間の時間はゲーム内時計 (clock) から差し引く
+  function togglePause(on = !paused) {
+    if (on === paused) return;
+    if (on && !document.body.classList.contains('playing')) return;
+    paused = on;
+    if (on) pauseAt = performance.now();
+    else { pauseOff += performance.now() - pauseAt; drag = null; for (const k in keys) keys[k] = false; }
+    $('pause').classList.toggle('hidden', !on);
+  }
+  $('pauseBtn').addEventListener('click', () => togglePause(true));
+  $('resumeBtn').addEventListener('click', () => togglePause(false));
+  $('pauseTitleBtn').addEventListener('click', () => {
+    togglePause(false);
+    document.body.classList.remove('playing');
+    $('titleBtn').click();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) togglePause(true); });
+
   resetFielders(true);
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    update(dt, now);
+    if (!paused) update(dt, now - pauseOff);
     render();
     requestAnimationFrame(frame);
   }

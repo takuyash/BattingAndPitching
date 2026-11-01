@@ -27,6 +27,7 @@
     <div id="pSpeed" class="pitch-only"></div>
     <div id="batterInfo" class="pitch-only match-only"></div>
     <button id="quitBtn" class="practice-only">練習終了</button>
+    <button id="pauseBtn" aria-label="一時停止">II</button>
     <div id="live"></div>
     <div id="help"></div>
     <div id="pitchSel" class="pitch-only lock">
@@ -107,6 +108,15 @@
       <div id="arsCount">0 / 5</div>
       <button id="arsGo" class="start" disabled>この球種で試合開始</button>
       <button id="arsBack" class="sub-btn">戻る</button>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <div class="panel">
+      <h2>一時停止</h2>
+      <p class="lead pc-only">P キー（Esc）でも再開できます</p>
+      <button id="resumeBtn" class="start">再開</button>
+      <button id="pauseTitleBtn" class="sub-btn">タイトルへ</button>
     </div>
   </div>
 
