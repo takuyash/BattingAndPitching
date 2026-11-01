@@ -34,6 +34,17 @@
       <div id="stamina" class="match-only">スタミナ<i><b id="staBar"></b></i></div>
       <div id="pitchBtns"></div>
     </div>
+    <div id="stance" class="bat-only">
+      <div class="st-ttl">立ち位置 <small class="pc-only">I J K L ／ O で標準</small></div>
+      <div class="st-pad">
+        <button data-mv="0,0.05" class="st-up" aria-label="前へ">▲</button>
+        <button data-mv="-0.05,0" class="st-l" aria-label="ベースから離れる">◀</button>
+        <button data-mv="0,0" class="st-c" aria-label="標準の位置">標準</button>
+        <button data-mv="0.05,0" class="st-r" aria-label="ベースに寄る">▶</button>
+        <button data-mv="0,-0.05" class="st-dn" aria-label="後ろへ">▼</button>
+      </div>
+      <div id="stanceLbl"></div>
+    </div>
     <button id="swingBtn" aria-label="スイング">スイング</button>
   </div>
 

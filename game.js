@@ -48,6 +48,14 @@
   const FAIR = PI / 4;
   const ZONE = { x0: -0.215, x1: 0.215, y0: 0.5, y1: 1.06 };
   const BATTER_X = -0.95;   // 打者の立ち位置（三塁側）
+  // 自分が打つときの立ち位置のずらし (x: +でベース寄り, z: +で投手寄り)。CPU 打者は常に標準位置
+  const STANCE_KEY = 'homerun-stadium-stance';
+  const STANCE_X = 0.2, STANCE_Z = 0.45;
+  const stance = { x: 0, z: 0 };
+  try {
+    const s = JSON.parse(localStorage.getItem(STANCE_KEY));
+    if (s && Number.isFinite(s.x) && Number.isFinite(s.z)) { stance.x = Math.max(-STANCE_X, Math.min(STANCE_X, s.x)); stance.z = Math.max(-STANCE_Z, Math.min(STANCE_Z, s.z)); }
+  } catch (e) { /* 保存領域が使えなくても標準位置で遊べる */ }
   const G = 9.8, DRAG = 0.0042;
   const STAND_SLOPE = 0.6, STAND_DEPTH = 42;
   const POS_NAME = { P: 'ピッチャー', C: 'キャッチャー', '1B': 'ファースト', '2B': 'セカンド', SS: 'ショート', '3B': 'サード', LF: 'レフト', CF: 'センター', RF: 'ライト' };
@@ -574,8 +582,29 @@
     swingStart = now;
     swingCY = cursor.y;
     sfx.swing();
-    // ボールが本塁を通過した後の振り遅れでも、許容幅の内なら当てる
-    if (pitch.crossed) tryHit(pitch.cross, pitch.T - (pitch.swingT + HIT_LEAD));
+    // ボールが打撃面を通過した後の振り遅れでも、許容幅の内なら当てる
+    if (pitch.contact) tryHit(pitch.contact, hitEarly());
+  }
+  // 打者の位置（自分の打撃時だけ立ち位置を反映）
+  const myStance = () => mode === 'bat' && !practice;
+  const bX = () => BATTER_X + (myStance() ? stance.x : 0);
+  const bZ = () => (myStance() ? stance.z : 0);
+  // 打撃面: 前に立つほど早く（変化しきる前に）、後ろに立つほど遅く（ボールを長く見て）打つ
+  const hitS = () => 1 - bZ() / REL[2];
+  const hitEarly = () => pitch.T * hitS() - (pitch.swingT + HIT_LEAD);
+  function moveStance(dx, dz) {
+    if (!myStance() || !['between', 'windup'].includes(game.state)) return;
+    stance.x = clamp(Math.round((stance.x + dx) * 100) / 100, -STANCE_X, STANCE_X);
+    stance.z = clamp(Math.round((stance.z + dz) * 100) / 100, -STANCE_Z, STANCE_Z);
+    if (dx === 0 && dz === 0) stance.x = stance.z = 0;
+    try { localStorage.setItem(STANCE_KEY, JSON.stringify(stance)); } catch (e) { /* 保存できなくても続行 */ }
+    updateStanceLabel();
+  }
+  function updateStanceLabel() {
+    const cm = v => Math.round(Math.abs(v) * 100) + 'cm';
+    const fz = stance.z > 0 ? '前 ' + cm(stance.z) : stance.z < 0 ? '後ろ ' + cm(stance.z) : '前後 標準';
+    const fx = stance.x > 0 ? 'ベース寄り ' + cm(stance.x) : stance.x < 0 ? '離れて ' + cm(stance.x) : '左右 標準';
+    $('stanceLbl').textContent = `${fz} ／ ${fx}`;
   }
 
   // =========================================================
@@ -767,7 +796,7 @@
   }
 
   // デッドボール: 本塁上で打者の体に当たったか（振っていたらストライク扱いなので呼ばない）
-  const hitsBatter = c => !practice && c[0] <= BATTER_X + 0.17 + BALL_R && c[0] >= BATTER_X - 0.25 && c[1] >= 0.1 && c[1] <= 1.75;
+  const hitsBatter = c => !practice && c[0] <= bX() + 0.17 + BALL_R && c[0] >= bX() - 0.25 && c[1] >= 0.1 && c[1] <= 1.75;
   function startHBP() {
     pitch.hbp = true;
     sfx.hbp();
@@ -1237,6 +1266,8 @@
   window.addEventListener('keydown', e => {
     if (e.code === 'KeyP' || (e.code === 'Escape' && (!practice || paused))) { togglePause(); return; }
     if (paused) return;
+    const sm = { KeyI: [0, 0.05], KeyK: [0, -0.05], KeyJ: [-0.05, 0], KeyL: [0.05, 0], KeyO: [0, 0] }[e.code];
+    if (sm) { moveStance(sm[0], sm[1]); return; }
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
     if (e.code === 'Escape') quitPractice();
@@ -1271,6 +1302,11 @@
       const s = pitch.t / pitch.T;
       const cpu = pitch.cpu;
       if (cpu && cpu.swing && !pitch.swung && pitch.t >= cpu.Texp - SWING_LEAD) cpuSwing(now);
+      // 自分の打撃は立ち位置に合わせた打撃面で判定する
+      if (mode === 'bat' && !pitch.contact && s >= hitS()) {
+        pitch.contact = pitchPos(pitch, hitS());
+        if (pitch.swung && tryHit(pitch.contact, hitEarly())) return;
+      }
       if (!pitch.crossed && s >= 1) {
         pitch.crossed = true;
         pitch.cross = pitchPos(pitch, 1);
@@ -1280,12 +1316,12 @@
             if (!pitch.swung) cpuSwing(now);
             if (tryHit(pitch.cross, cpu.early, cpu.bat)) return;
           }
-        } else if (pitch.swung && tryHit(pitch.cross, pitch.T - (pitch.swingT + HIT_LEAD))) return;
+        }
         if (!pitch.swung && hitsBatter(pitch.cross)) { startHBP(); return; }
       }
       ballPos = pitchPos(pitch, Math.min(s, pitch.sEnd));
       // バッティングでまだ振っていなければ、振り遅れの許容幅が終わるまで判定を待つ
-      const lateEnd = pitch.T + D.win - HIT_LEAD;
+      const lateEnd = pitch.T * hitS() + D.win - HIT_LEAD;
       if (s >= pitch.sEnd && (mode !== 'bat' || pitch.swung || pitch.t >= lateEnd)) endPitch();
     } else if (st === 'hbp') {
       const v = pitch.vel;
@@ -1680,13 +1716,15 @@
   }
   function drawBatter() {
     const bp = batPose();
+    const off = [bX() - BATTER_X, 0, bZ()];   // バットの姿勢は標準位置基準なので立ち位置ぶんずらす
+    bp.h = add(bp.h, off);
     const sw = clamp(bp.p, 0, 1);
     const J = {
       fl: [-0.4, 0, 0.05], fr: [0.38, 0, 0],
       hip: [-0.08 * sw, 0.88, -0.05], sh: [-0.1 * sw, 1.38, -0.02],
       hl: [0, 0, 0], hr: [0, 0, 0], head: [-0.04 - 0.08 * sw, 1.58, 0.02],
     };
-    drawPerson({ x: BATTER_X, z: 0, face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h }, bat: true, num: mode === 'pitch' ? game.batter % LINEUP.length + 1 : 51 });
+    drawPerson({ x: bX(), z: bZ(), face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h }, bat: true, num: mode === 'pitch' ? game.batter % LINEUP.length + 1 : 51 });
     const mid = add(bp.h, mul(bp.d, 0.42)), tip = add(bp.h, mul(bp.d, 0.86));
     limb(bp.h, mid, 0.035, '#c9995e');
     limb(mid, tip, 0.065, '#d9b07a');
@@ -1906,7 +1944,7 @@
       push([p[0], 1, p[2]], () => drawPerson({ x: p[0], z: p[2], face, J, col: BAT_COL }));
     }
 
-    if (batterVisible && st !== 'title' && st !== 'over') push([BATTER_X, 1, 0], drawBatter);
+    if (batterVisible && st !== 'title' && st !== 'over') push([bX(), 1, bZ()], drawBatter);
     if (batting) push([0, 0.78, 0], drawZone);
     if (ballPos) push(ballPos, drawBall);
 
@@ -1960,7 +1998,7 @@
     $('help').textContent = practice
       ? 'マウスで狙う ／ クリックで投球 → リングが的に重なる瞬間にもう一度クリック ／ 1〜0・-・^・¥・@・[・;キーで球種 ／ Escで終了'
       : P ? 'マウスで狙う ／ クリックで投球 → 縮むリングが的に重なる瞬間にもう一度クリック ／ 1〜6キーで球種'
-      : touch ? '画面をなぞってカーソル移動 ／ ボタンでスイング' : 'マウスでカーソル移動 ／ クリック・スペースでスイング';
+      : touch ? '画面をなぞってカーソル移動 ／ ボタンでスイング' : 'マウスでカーソル移動 ／ クリック・スペースでスイング ／ I・J・K・Lで立ち位置';
     $('swingBtn').textContent = P ? '投げる' : 'スイング';
     $('runsLbl').textContent = vs ? '自分-CPU' : practice ? '球数' : P ? '失点' : '得点';
   }
@@ -2082,6 +2120,11 @@
     mode = practice ? 'pitch' : vs ? 'bat' : b.dataset.mode;
     applyModeUI();
   });
+  document.querySelectorAll('#stance button').forEach(b => b.addEventListener('click', () => {
+    const [dx, dz] = b.dataset.mv.split(',').map(Number);
+    moveStance(dx, dz);
+  }));
+  updateStanceLabel();
   radio('diffSel', b => { selDiff = b.dataset.diff; });
   radio('schoolSel', b => { selSchool = b.dataset.school; $('schoolDesc').textContent = SCHOOLS[selSchool].desc; });
   $('schoolDesc').textContent = SCHOOLS[selSchool].desc;
