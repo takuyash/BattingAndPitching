@@ -98,6 +98,25 @@
     normal: { rx: 0.12, ry: 0.09,  win: 0.08, read: 0.5,  adapt: 0.68, field: 1.0 },
     hard:   { rx: 0.14, ry: 0.105, win: 0.09, read: 0.62, adapt: 0.78, field: 0.95 },
   };
+  // 試合モードの対戦校。bat: 自分が打つときの相手投手・守備（DIFFS と同じ形）、pit: 自分が投げるときの相手打線（PDIFFS と同じ形）
+  // pit.pow / pit.spd: 相手打線のパワー・走力の倍率
+  const ALL_TYPES = DIFFS.hard.types;
+  const SCHOOLS = {
+    weak:   { name: '弱小校',     desc: '球は遅く打線も非力。のびのび打って投げよう', bat: DIFFS.easy, pit: PDIFFS.easy },
+    mid:    { name: '中堅校',     desc: '投打のバランスが取れた手堅いチーム', bat: DIFFS.normal, pit: PDIFFS.normal },
+    strong: { name: '強豪校',     desc: '甲子園常連。投打ともに隙がない', bat: DIFFS.hard, pit: PDIFFS.hard },
+    slug:   { name: '強打の名門', desc: '投手はそこそこだが、打線は長打力抜群。甘い球は持っていかれる',
+              bat: { ...DIFFS.normal, vmin: 128, vmax: 148 }, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95, pow: 1.25 } },
+    ace:    { name: '投手王国',   desc: '150km/h超えのエースと鋭い変化球。打線は並',
+              bat: { ...DIFFS.hard, vmin: 142, vmax: 160, brk: 1.4, field: 1.04 }, pit: PDIFFS.normal },
+    speed:  { name: '機動力の雄', desc: '俊足ぞろいで守備も堅い。内野ゴロでも気が抜けない',
+              bat: { ...DIFFS.hard, vmin: 128, vmax: 150, field: 1.12 }, pit: { ...PDIFFS.hard, read: 0.66, pow: 0.9, spd: 1.25 } },
+    king:   { name: '絶対王者',   desc: '全国制覇の最強校。投打走すべてが一枚上',
+              bat: { ...DIFFS.hard, vmin: 145, vmax: 162, brk: 1.45, win: 0.19, field: 1.1, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92, pow: 1.15, spd: 1.1 } },
+  };
+  let selSchool = 'mid';
+  // 現在のモードで使う難易度（試合モードは対戦校から）
+  const diffFor = m => (vs ? SCHOOLS[selSchool][m === 'pitch' ? 'pit' : 'bat'] : (m === 'pitch' ? PDIFFS : DIFFS)[selDiff]);
   // 相手打線 (con: ミート, pow: パワー, eye: 選球眼)
   // spd: 走力（塁間を走る速さの倍率）
   const LINEUP = [
@@ -613,7 +632,7 @@
     const Tavg = REL[2] / (cpuMem.kmh / 3.6);
     const Texp = lerp(Tavg, p.T, clamp(D.adapt * b.con, 0, 0.95)) + gauss() * (0.018 + Math.max(0, p.kmh - 120) * 0.0004);
     // 体に向かってくる球は振らずによける
-    return { swing: !hitsBatter(cross) && Math.random() < ps, perc, Texp, early: p.T - Texp, bat: { x: perc[0], y: perc[1], rx: D.rx * b.con, ry: D.ry * b.con, win: D.win, pow: b.pow } };
+    return { swing: !hitsBatter(cross) && Math.random() < ps, perc, Texp, early: p.T - Texp, bat: { x: perc[0], y: perc[1], rx: D.rx * b.con, ry: D.ry * b.con, win: D.win, pow: b.pow * (D.pow || 1) } };
   }
   function cpuSwing(now) {
     pitch.swung = true;
@@ -670,7 +689,7 @@
     vsm.saved[mode] = pickSide();
     mode = next;
     Object.assign(game, vsm.saved[mode] || SIDE0);
-    D = (mode === 'pitch' ? PDIFFS : DIFFS)[selDiff];
+    D = diffFor(mode);
     game.outs = game.balls = game.strikes = 0;
     runners = []; pitch = null; play = null; ballPos = null; ballTrail = []; lastCross = null; meter = null;
     $('pitchInfo').classList.remove('show');
@@ -872,7 +891,7 @@
     return mix(S[i], S[i + 1], f - i);
   }
   // 打者の走力（バッティングモードの自分は 1）
-  const batterSpd = () => (mode === 'pitch' ? LINEUP[game.batter % LINEUP.length].spd : 1);
+  const batterSpd = () => (mode === 'pitch' ? LINEUP[game.batter % LINEUP.length].spd * (D.spd || 1) : 1);
   const runT = n => 0.5 + n * 3.7 / batterSpd();   // 打者走者が n 塁に到達する時刻
 
   function planPlay(p0, v0, la, spray) {
@@ -2005,7 +2024,7 @@
       mode = 'bat';
       Object.assign(vsm, { line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false });
     }
-    D = (mode === 'pitch' ? PDIFFS : DIFFS)[selDiff];
+    D = diffFor(mode);
     applyModeUI();
     if (mode === 'pitch' || vs) buildPitchButtons();
     resetGame();
@@ -2043,6 +2062,7 @@
       $('ovUnit').textContent = '';
       [['安打', bat.hits], ['本塁打', bat.hrs], ['奪三振', pit.ks + 'K']].forEach(([k, v], i) => { $('ovK' + (i + 1)).textContent = k; $('ovV' + (i + 1)).textContent = v; });
       note = t.me > t.cpu ? (t.cpu === 0 ? '完封勝利！' : '勝利！') : t.me < t.cpu ? (vsm.walkoff ? 'サヨナラ負け…' : '敗戦…') : '引き分け';
+      note = `vs ${SCHOOLS[selSchool].name}　${note}`;
       renderLine();
     }
     $('ovNote').textContent = note;
@@ -2063,6 +2083,8 @@
     applyModeUI();
   });
   radio('diffSel', b => { selDiff = b.dataset.diff; });
+  radio('schoolSel', b => { selSchool = b.dataset.school; $('schoolDesc').textContent = SCHOOLS[selSchool].desc; });
+  $('schoolDesc').textContent = SCHOOLS[selSchool].desc;
   radio('innSel', b => { vsm.innings = +b.dataset.inn; });
   buildPitchButtons();
   if (COARSE) enableTouch();

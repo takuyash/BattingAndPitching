@@ -367,6 +367,10 @@ h2 { font-size: 34px; font-weight: 900; color: #ffd43a; }
 .modes button { padding: 11px 0; font-size: 16px; }
 .modes button.sel { color: #10203a; background: #6fe8ff; border-color: #6fe8ff; }
 .sel-lbl { margin-bottom: 6px; font-size: 12px; opacity: 0.7; }
+/* 対戦校: 7校を折り返して並べる（上段: 弱小〜強豪、下段: 強豪校の種類） */
+.diffs.schools { flex-wrap: wrap; margin-bottom: 6px; }
+.diffs.schools button { flex: 1 0 22%; font-size: 14px; }
+.school-desc { min-height: 1.5em; margin: 0 0 14px; font-size: 12px; opacity: 0.8; }
 
 button.start {
   display: block;

@@ -63,7 +63,20 @@
           <button data-inn="9">9</button>
         </div>
       </div>
-      <div class="diffs match-only" id="diffSel">
+      <div class="vs-only">
+        <div class="sel-lbl">対戦校</div>
+        <div class="diffs schools" id="schoolSel">
+          <button data-school="weak">弱小校</button>
+          <button data-school="mid" class="sel">中堅校</button>
+          <button data-school="strong">強豪校</button>
+          <button data-school="slug">強打の名門</button>
+          <button data-school="ace">投手王国</button>
+          <button data-school="speed">機動力の雄</button>
+          <button data-school="king">絶対王者</button>
+        </div>
+        <p id="schoolDesc" class="school-desc"></p>
+      </div>
+      <div class="diffs match-only no-vs" id="diffSel">
         <button data-diff="easy">かんたん</button>
         <button data-diff="normal" class="sel">ふつう</button>
         <button data-diff="hard">むずかしい</button>
