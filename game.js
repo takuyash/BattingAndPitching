@@ -97,6 +97,8 @@
     'スイーパー':   { sp: 0.84, bx: 0.55,  by: -0.12 },
     'シンカー':     { sp: 0.9,  bx: -0.26, by: -0.45 },
     'ナックル':     { sp: 0.68, bx: 0.0,   by: 0.0,   cost: 1.2, rd: -0.5, knuckle: true },
+    // arc: 山なりの高さ (m)。リリースと本塁上では 0 なので狙いの位置は変わらない
+    'イーファス':   { sp: 0.48, bx: 0.0,   by: -0.1,  arc: 1.6, cost: 1.0, ctl: 1.25 },
   };
   let D = DIFFS.normal;
 
@@ -132,9 +134,9 @@
     { con: 0.98, pow: 1.22, eye: 1.0,  spd: 0.86 }, { con: 0.97, pow: 1.12, eye: 0.95, spd: 0.92 }, { con: 1.0,  pow: 1.0,  eye: 1.0,  spd: 1.0 },
     { con: 0.94, pow: 0.95, eye: 0.9,  spd: 1.08 }, { con: 0.9,  pow: 0.88, eye: 0.85, spd: 0.95 }, { con: 0.84, pow: 0.8,  eye: 0.8,  spd: 0.9 },
   ];
-  const P_TYPES = ['ストレート', '剛速球', 'ライジング','カーブ', 'スローカーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'スイーパー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ナックル'];
+  const P_TYPES = ['ストレート', '剛速球', 'ライジング','カーブ', 'スローカーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'スイーパー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ナックル', 'イーファス'];
   const P_SHORT = { 'ナックルカーブ': 'ナックルC', 'スローカーブ': 'スローC', '縦スライダー': '縦スラ', 'チェンジアップ': 'チェンジ', 'カットボール': 'カット', 'スプリット': 'スプリ' };
-  // 12番目は JIS キーボードの「^」（US 配列では「=」）、13番目は「¥」（US 配列では「\」）、14番目は「@」（US 配列では「[」）、15番目は「[」（US 配列では「]」）、16番目は「;」
+  // 12番目は JIS キーボードの「^」（US 配列では「=」）、13番目は「¥」（US 配列では「\」）、14番目は「@」（US 配列では「[」）、15番目は「[」（US 配列では「]」）、16番目は「;」、17番目は「:」（US 配列では「'」）
   const P_DESC = {
     '剛速球': '最速170km/h。スタミナ消費大で荒れやすい',
     'ライジング': 'ストレートの軌道から手元でホップする',
@@ -151,6 +153,7 @@
     'シンカー': '内角へ曲がりながら沈む',
     'カットボール': '速くて小さく曲がる',
     'ナックル': '揺れて行き先が読めない魔球',
+    'イーファス': '高く山なりに放る超スローボール。タイミングを大きく外す',
   };
   // 持ち球: ストレート + 試合前に選ぶ5球種
   const ARSENAL_SIZE = 5;
@@ -161,8 +164,8 @@
     if (Array.isArray(saved) && saved.length === ARSENAL_SIZE && saved.every(n => P_DESC[n])) arsenal = saved;
   } catch (e) { /* 保存領域が使えなくても既定の持ち球で遊べる */ }
   let myPitches = [];
-  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen', 'BracketLeft', 'BracketRight', 'Semicolon'];
-  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥', '@', '[', ';'];
+  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen', 'BracketLeft', 'BracketRight', 'Semicolon', 'Quote'];
+  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥', '@', '[', ';', ':'];
   // P_VMAX: ストレートの最高球速, P_BRK: 変化量の倍率, P_BEND: 曲がり始めの遅さ（大きいほど手元で鋭く曲がる）
   const P_VMAX = 148, P_BRK = 2.1, P_BEND = 3, INNINGS = 3;
   // 落ちる球の倍率は P_BRK より小さくする（落ち幅が大きすぎると、途中のストレート軌道が上向きになり浮いてから落ちて見える）
@@ -545,13 +548,13 @@
   function buildPitch(name, kmh, tgt, brk, bend = 2, drop = 0) {
     const aim = sub(tgt, brk);
     aim[1] -= drop;
-    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim, brk, bend, drop, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
+    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim, brk, bend, drop, arc: PITCHES[name].arc || 0, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
   }
   function pitchPos(p, s) {
     const k = Math.pow(s, p.bend);
     const pos = [
       p.rel[0] + (p.aim[0] - p.rel[0]) * s + p.brk[0] * k,
-      p.rel[1] + (p.aim[1] - p.rel[1]) * s + p.brk[1] * k + p.drop * Math.pow(s, DROP_BEND),
+      p.rel[1] + (p.aim[1] - p.rel[1]) * s + p.brk[1] * k + p.drop * Math.pow(s, DROP_BEND) + p.arc * 4 * s * (1 - s),
       p.rel[2] + (p.aim[2] - p.rel[2]) * s,
     ];
     if (p.wob) {
@@ -2005,7 +2008,7 @@
   // ピッチャー視点の変化方向（+x は画面左）
   function pitchArrow(n) {
     const d = PITCHES[n], by = d.by + (d.drop || 0);
-    return d.knuckle ? '?' : Math.hypot(d.bx, by) < 0.15 ? '●'
+    return d.knuckle ? '?' : d.arc ? '⌒' : Math.hypot(d.bx, by) < 0.15 ? '●'
       : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-by, -d.bx) / DEG)}deg)">→</span>`;
   }
   function buildPitchButtons() {
