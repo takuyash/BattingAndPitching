@@ -155,6 +155,11 @@
     'ナックル': '揺れて行き先が読めない魔球',
     'イーファス': '高く山なりに放る超スローボール。タイミングを大きく外す',
   };
+  // 左投げのときに説明が変わる球種（相手は右打者）
+  const P_DESC_L = {
+    'シュート': '右打者の外角へ逃げていく',
+    'シンカー': '外角へ逃げながら沈む',
+  };
   // 持ち球: ストレート + 試合前に選ぶ5球種
   const ARSENAL_SIZE = 5;
   const ARSENAL_KEY = 'homerun-stadium-arsenal';
@@ -456,6 +461,12 @@
   // 左右が変わったら true を返す
   const rollLefty = () => { const was = oppLefty; oppLefty = Math.random() < LEFTY_RATE; return was !== oppLefty; };
   const handLbl = () => (oppLefty ? '左投手' : '右投手');
+  // ピッチング時の自分の利き腕（タイトルで選び、保存しておく）
+  const HAND_KEY = 'homerun-stadium-hand';
+  let myLefty = false;
+  try { myLefty = localStorage.getItem(HAND_KEY) === 'L'; } catch (e) { /* 保存領域が使えなければ右投げ */ }
+  // いま投げている投手が左投げか
+  const isLefty = () => (mode === 'pitch' ? myLefty : oppLefty);
 
   const SWING_LEAD = 0.12;    // スイング開始からミートまでの時間
   const HIT_LEAD = 0.05;      // 打撃判定で使うボタンからミートまでの時間（体感に合わせて短め）
@@ -547,18 +558,17 @@
     if (Math.random() < 0.6) { tx = rand(-0.2, 0.2); ty = rand(0.52, 1.04); }
     else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
-    // 左投手はリリース位置と横の変化が左右反転する
-    const hand = oppLefty ? -1 : 1;
-    const brk = [hand * def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
-    const p = buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
-    p.rel[0] *= hand;
-    return p;
+    const brk = [def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
+    return buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
   }
-  // tgt: 本塁上を通過する位置, brk: 変化量, bend: 変化の効き始め（s^bend で曲がる）, drop: 手元での落ち幅
+  // tgt: 本塁上を通過する位置, brk: 変化量（右投手基準）, bend: 変化の効き始め（s^bend で曲がる）, drop: 手元での落ち幅
+  // 左投手はリリース位置と横の変化を左右反転する（本塁上の通過位置 tgt は変わらない）
   function buildPitch(name, kmh, tgt, brk, bend = 2, drop = 0) {
+    const hand = isLefty() ? -1 : 1;
+    brk = [brk[0] * hand, brk[1], brk[2]];
     const aim = sub(tgt, brk);
     aim[1] -= drop;
-    return { name, kmh: Math.round(kmh), rel: REL.slice(), aim, brk, bend, drop, arc: PITCHES[name].arc || 0, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
+    return { name, kmh: Math.round(kmh), rel: [REL[0] * hand, REL[1], REL[2]], aim, brk, bend, drop, arc: PITCHES[name].arc || 0, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
   }
   function pitchPos(p, s) {
     const k = Math.pow(s, p.bend);
@@ -1953,8 +1963,8 @@
       else if (st === 'play' || st === 'between') J = poseJoints('stand');
       else J = poseJoints('ready');
       if (f.hasBall) ball = true;
-      // バッティング中の相手投手が左投げなら左右反転して描く
-      const lefty = i === 0 && mode === 'bat' && oppLefty;
+      // 投手が左投げなら左右反転して描く
+      const lefty = i === 0 && isLefty();
       if (lefty) J = mirrorJoints(J);
       push([f.x, 1, f.z], () => drawPerson({ x: f.x, z: f.z, face: f.face, J, col: DEF_COL, alpha, glove, mitt, ovW, ball, lefty, num: UNI_NUM[f.id] }));
     });
@@ -2022,7 +2032,7 @@
     document.body.classList.toggle('practice', practice);
     document.body.classList.toggle('vs', vs);
     $('help').textContent = practice
-      ? 'マウスで狙う ／ クリックで投球 → リングが的に重なる瞬間にもう一度クリック ／ 1〜0・-・^・¥・@・[・;キーで球種 ／ Escで終了'
+      ? 'マウスで狙う ／ クリックで投球 → リングが的に重なる瞬間にもう一度クリック ／ 1〜0・-・^・¥・@・[・;・:キーで球種 ／ Escで終了'
       : P ? 'マウスで狙う ／ クリックで投球 → 縮むリングが的に重なる瞬間にもう一度クリック ／ 1〜6キーで球種'
       : touch ? '画面をなぞってカーソル移動 ／ ボタンでスイング' : 'マウスでカーソル移動 ／ クリック・スペースでスイング ／ I・J・K・Lで立ち位置';
     $('swingBtn').textContent = P ? '投げる' : 'スイング';
@@ -2030,9 +2040,9 @@
   }
   // ピッチャー視点の変化方向（+x は画面左）
   function pitchArrow(n) {
-    const d = PITCHES[n], by = d.by + (d.drop || 0);
-    return d.knuckle ? '?' : d.arc ? '⌒' : Math.hypot(d.bx, by) < 0.15 ? '●'
-      : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-by, -d.bx) / DEG)}deg)">→</span>`;
+    const d = PITCHES[n], by = d.by + (d.drop || 0), bx = myLefty ? -d.bx : d.bx;
+    return d.knuckle ? '?' : d.arc ? '⌒' : Math.hypot(bx, by) < 0.15 ? '●'
+      : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-by, -bx) / DEG)}deg)">→</span>`;
   }
   function buildPitchButtons() {
     myPitches = practice ? P_TYPES.slice() : P_TYPES.filter(n => n === 'ストレート' || arsenal.includes(n));
@@ -2051,7 +2061,7 @@
       const on = picking.includes(n);
       return `<button class="ars${on ? ' sel' : ''}${full && !on ? ' off' : ''}" data-p="${n}">
         <span class="ars-head">${pitchArrow(n)}<b>${n}</b><em>${Math.round(P_VMAX * PITCHES[n].sp * 0.975)}km/h</em></span>
-        <small>${P_DESC[n]}</small></button>`;
+        <small>${(myLefty && P_DESC_L[n]) || P_DESC[n]}</small></button>`;
     }).join('');
     $('arsCount').textContent = `${picking.length} / ${ARSENAL_SIZE}`;
     $('arsGo').disabled = !full;
@@ -2153,6 +2163,11 @@
   }));
   updateStanceLabel();
   radio('diffSel', b => { selDiff = b.dataset.diff; });
+  document.querySelectorAll('#handSel button').forEach(b => b.classList.toggle('sel', (b.dataset.hand === 'L') === myLefty));
+  radio('handSel', b => {
+    myLefty = b.dataset.hand === 'L';
+    try { localStorage.setItem(HAND_KEY, myLefty ? 'L' : 'R'); } catch (e) { /* 保存できなくても続行 */ }
+  });
   radio('schoolSel', b => { selSchool = b.dataset.school; $('schoolDesc').textContent = SCHOOLS[selSchool].desc; });
   $('schoolDesc').textContent = SCHOOLS[selSchool].desc;
   radio('innSel', b => { vsm.innings = +b.dataset.inn; });

@@ -22,7 +22,8 @@ body.pmode .bat-only,
 body.practice .match-only,
 body:not(.practice) .practice-only,
 body:not(.vs) .vs-only,
-body.vs .no-vs { display: none !important; }
+body.vs .no-vs,
+body:not(.pmode):not(.vs) .hand-sel { display: none !important; }
 
 #game { display: block; position: fixed; inset: 0; }
 body.playing #game { cursor: none; }
