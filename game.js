@@ -450,6 +450,12 @@
   let catcherMitt = [0, 0.75, -0.9];
   let selPitch = P_TYPES[0], stamina = 100, meter = null;
   const cpuMem = { kmh: 146, last: '' };   // 打者が覚えている直近の球速・球種
+  // バッティング時の相手投手が左投げか（イニングごとに決め直す）
+  const LEFTY_RATE = 0.35;
+  let oppLefty = false;
+  // 左右が変わったら true を返す
+  const rollLefty = () => { const was = oppLefty; oppLefty = Math.random() < LEFTY_RATE; return was !== oppLefty; };
+  const handLbl = () => (oppLefty ? '左投手' : '右投手');
 
   const SWING_LEAD = 0.12;    // スイング開始からミートまでの時間
   const HIT_LEAD = 0.05;      // 打撃判定で使うボタンからミートまでの時間（体感に合わせて短め）
@@ -516,7 +522,7 @@
       bar.style.width = stamina + '%';
       bar.style.background = stamina > 50 ? '#5fe07a' : stamina > 25 ? '#ffd84a' : '#ff5a5a';
     } else {
-      $('stats').innerHTML = `${vs ? `<b>${inningLbl()}</b> ` : ''}安打 <b>${game.hits}</b> 本塁打 <b>${game.hrs}</b> 最長 <b>${game.best ? Math.round(game.best) + 'm' : '-'}</b>`;
+      $('stats').innerHTML = `${vs ? `<b>${inningLbl()}</b> ` : ''}<b>${handLbl()}</b> 安打 <b>${game.hits}</b> 本塁打 <b>${game.hrs}</b> 最長 <b>${game.best ? Math.round(game.best) + 'm' : '-'}</b>`;
     }
     if (vs) { const t = vsTotals(); $('runs').textContent = `${t.me}-${t.cpu}`; }
   }
@@ -541,8 +547,12 @@
     if (Math.random() < 0.6) { tx = rand(-0.2, 0.2); ty = rand(0.52, 1.04); }
     else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
-    const brk = [def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
-    return buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
+    // 左投手はリリース位置と横の変化が左右反転する
+    const hand = oppLefty ? -1 : 1;
+    const brk = [hand * def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
+    const p = buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
+    p.rel[0] *= hand;
+    return p;
   }
   // tgt: 本塁上を通過する位置, brk: 変化量, bend: 変化の効き始め（s^bend で曲がる）, drop: 手元での落ち幅
   function buildPitch(name, kmh, tgt, brk, bend = 2, drop = 0) {
@@ -568,7 +578,7 @@
   function releasePitch(now, p) {
     pitch = p || makePitch();
     pitch.t0 = now;
-    ballPos = REL.slice();
+    ballPos = pitch.rel.slice();
     ballTrail = [];
     game.state = 'pitch'; game.st = 0;
     $('pitchName').textContent = pitch.name;
@@ -708,8 +718,9 @@
     game.inning++; game.outs = 0; game.balls = game.strikes = 0;
     runners = [];
     stamina = Math.min(100, stamina + 8);
+    const sub = mode === 'bat' && rollLefty() ? handLbl() + 'に交代' : '';
     updateHUD();
-    showMsg(game.inning + '回', '', 'neutral', 1.4);
+    showMsg(game.inning + '回', sub, 'neutral', 1.4);
     toBetween(1.6);
   }
   const startNext = () => (mode === 'pitch' ? startAim() : startWindup());
@@ -735,9 +746,10 @@
     $('pitchSel').classList.add('lock');
     $('pSpeed').textContent = '';
     resetFielders(true);
+    if (mode === 'bat') rollLefty();
     applyModeUI();
     updateHUD();
-    showMsg(inningLbl(), mode === 'bat' ? '攻撃' : '守備', 'neutral', 1.6);
+    showMsg(inningLbl(), mode === 'bat' ? '攻撃　相手は' + handLbl() : '守備', 'neutral', 1.6);
     toBetween(1.8);
   }
   function endHalf() {
@@ -1485,6 +1497,13 @@
     }
     return J;
   }
+  // 左右反転したポーズ（左投手用）
+  const MIRROR = { hl: 'hr', hr: 'hl', fl: 'fr', fr: 'fl' };
+  function mirrorJoints(J) {
+    const M = {};
+    for (const k in J) M[MIRROR[k] || k] = [-J[k][0], J[k][1], J[k][2]];
+    return M;
+  }
 
   function drawPerson(o) {
     const s = Math.sin(o.face), c = Math.cos(o.face);
@@ -1573,12 +1592,13 @@
       z: toCam(el)[2],
       draw() {
         draw([[sh, el, 0.095, col.shirt], [el, h, 0.075, col.under]]);
-        if (left && o.glove) {
+        // 左投げはグラブを右手に、ボールを左手に持つ
+        if (left !== !!o.lefty && o.glove) {
           const r = o.mitt ? 0.13 : 0.095;
           dot2(h, r, '#8a5427');
           dot2(add(h, [0, 0.01, 0]), r * 0.62, '#a8693a', false);   // 革の明るい面
           dot2(add(h, [0, 0.01, 0]), r * 0.22, '#6a3d1c', false);   // ポケット
-        } else if (!left && o.ball) {
+        } else if (left === !!o.lefty && o.ball) {
           dot2(h, 0.04, '#fff');
         } else dot2(h, 0.045, o.bat ? col.under : SKIN);   // 打者は手袋
       },
@@ -1933,7 +1953,10 @@
       else if (st === 'play' || st === 'between') J = poseJoints('stand');
       else J = poseJoints('ready');
       if (f.hasBall) ball = true;
-      push([f.x, 1, f.z], () => drawPerson({ x: f.x, z: f.z, face: f.face, J, col: DEF_COL, alpha, glove, mitt, ovW, ball, num: UNI_NUM[f.id] }));
+      // バッティング中の相手投手が左投げなら左右反転して描く
+      const lefty = i === 0 && mode === 'bat' && oppLefty;
+      if (lefty) J = mirrorJoints(J);
+      push([f.x, 1, f.z], () => drawPerson({ x: f.x, z: f.z, face: f.face, J, col: DEF_COL, alpha, glove, mitt, ovW, ball, lefty, num: UNI_NUM[f.id] }));
     });
 
     for (const r of runners) {
@@ -2066,6 +2089,7 @@
       Object.assign(vsm, { line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false });
     }
     D = diffFor(mode);
+    rollLefty();
     applyModeUI();
     if (mode === 'pitch' || vs) buildPitchButtons();
     resetGame();
