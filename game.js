@@ -111,28 +111,43 @@
   // 試合モードの対戦校。bat: 自分が打つときの相手投手・守備（DIFFS と同じ形）、pit: 自分が投げるときの相手打線（PDIFFS と同じ形）
   // pit.pow / pit.spd: 相手打線のパワー・走力の倍率
   const ALL_TYPES = DIFFS.hard.types;
+  // def: 自分が打つときの相手守備
+  //   field: 野手の走る速さ, react: 打球への反応の遅さ（倍率）, arm: 送球の速さ, hold: 捕ってから投げるまでの時間（倍率）, err: アウトになる打球でエラーする確率
   const SCHOOLS = {
-    weak:   { name: '弱小校',     desc: '球は遅く打線も非力。のびのび打って投げよう', bat: DIFFS.easy, pit: PDIFFS.easy },
-    mid:    { name: '中堅校',     desc: '投打のバランスが取れた手堅いチーム', bat: DIFFS.normal, pit: PDIFFS.normal },
-    strong: { name: '強豪校',     desc: '甲子園常連。投打ともに隙がない', bat: DIFFS.hard, pit: PDIFFS.hard },
-    slug:   { name: '強打の名門', desc: '投手はそこそこだが、打線は長打力抜群。甘い球は持っていかれる',
-              bat: { ...DIFFS.normal, vmin: 128, vmax: 148 }, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95, pow: 1.25 } },
+    weak:   { name: '弱小校',     desc: '球は遅く打線も非力。守備もおぼつかない。のびのび打って投げよう', bat: DIFFS.easy, pit: PDIFFS.easy,
+              def: { field: 0.85, react: 1.4, arm: 0.75, hold: 1.4, err: 0.12 } },
+    mid:    { name: '中堅校',     desc: '投打のバランスが取れた手堅いチーム', bat: DIFFS.normal, pit: PDIFFS.normal,
+              def: { field: 1.0, react: 1.0, arm: 1.0, hold: 1.0, err: 0.04 } },
+    strong: { name: '強豪校',     desc: '甲子園常連。投打ともに隙がない', bat: DIFFS.hard, pit: PDIFFS.hard,
+              def: { field: 1.06, react: 0.88, arm: 1.1, hold: 0.88, err: 0.015 } },
+    slug:   { name: '強打の名門', desc: '投手はそこそこだが、打線は長打力抜群。守備は少し雑',
+              bat: { ...DIFFS.normal, vmin: 128, vmax: 148 }, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95, pow: 1.25 },
+              def: { field: 0.95, react: 1.12, arm: 1.0, hold: 1.12, err: 0.06 } },
     ace:    { name: '投手王国',   desc: '150km/h超えのエースと鋭い変化球。打線は並',
-              bat: { ...DIFFS.hard, vmin: 142, vmax: 160, brk: 1.4, field: 1.04 }, pit: PDIFFS.normal },
+              bat: { ...DIFFS.hard, vmin: 142, vmax: 160, brk: 1.4 }, pit: PDIFFS.normal,
+              def: { field: 1.04, react: 0.95, arm: 1.05, hold: 0.95, err: 0.025 } },
     speed:  { name: '機動力の雄', desc: '俊足ぞろいで守備も堅い。内野ゴロでも気が抜けない',
-              bat: { ...DIFFS.hard, vmin: 128, vmax: 150, field: 1.12 }, pit: { ...PDIFFS.hard, read: 0.66, pow: 0.9, spd: 1.25 } },
+              bat: { ...DIFFS.hard, vmin: 128, vmax: 150 }, pit: { ...PDIFFS.hard, read: 0.66, pow: 0.9, spd: 1.25 },
+              def: { field: 1.12, react: 0.85, arm: 1.08, hold: 0.82, err: 0.015 } },
     king:   { name: '絶対王者',   desc: '全国制覇の最強校。投打走すべてが一枚上',
-              bat: { ...DIFFS.hard, vmin: 145, vmax: 162, brk: 1.45, win: 0.19, field: 1.1, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92, pow: 1.15, spd: 1.1 } },
+              bat: { ...DIFFS.hard, vmin: 145, vmax: 162, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92, pow: 1.15, spd: 1.1 },
+              def: { field: 1.1, react: 0.82, arm: 1.15, hold: 0.82, err: 0.005 } },
   };
   let selSchool = 'mid';
   // 現在のモードで使う難易度（試合モードは対戦校から）
-  // 試合モードで自分が打つときのバットの当たり範囲は対戦校によらず一定（中堅校＝ノーマルの大きさ）
-  const VS_BAT_ZONE = { rx: DIFFS.normal.rx, ry: DIFFS.normal.ry };
+  // 試合モードで自分が打つときのバットの当たり範囲・タイミングの猶予は対戦校によらず一定（ノーマルと同じ）。
+  // 対戦校の強さは投手の球速・変化量・球種と守備力で表現する
+  const VS_BAT_ZONE = { rx: DIFFS.normal.rx, ry: DIFFS.normal.ry, win: DIFFS.normal.win };
   const diffFor = m => {
     if (!vs) return (m === 'pitch' ? PDIFFS : DIFFS)[selDiff];
     if (m === 'pitch') return SCHOOLS[selSchool].pit;
-    return { ...SCHOOLS[selSchool].bat, ...VS_BAT_ZONE };
+    return { ...SCHOOLS[selSchool].bat, ...SCHOOLS[selSchool].def, ...VS_BAT_ZONE };
   };
+  // 守備の補正（未指定なら標準）
+  const THROW_V = 30;   // 送球の速さ (m/s)
+  const armV = () => THROW_V * (D.arm || 1);
+  const holdT = t => t * (D.hold || 1);
+  const reactT = f => f.re * (D.react || 1);
   // 相手打線 (con: ミート, pow: パワー, eye: 選球眼)
   // spd: 走力（塁間を走る速さの倍率）
   const LINEUP = [
@@ -970,16 +985,16 @@
     let best = null;
     fielders.forEach((f, i) => {
       const airOnly = !fair || f.air;
-      const spd = f.sp * D.field;
+      const spd = f.sp * D.field, re = reactT(f);
       for (let j = 0; j < sim.S.length; j++) {
         const t = j * sim.sdt;
-        if (t < f.re) continue;
+        if (t < re) continue;
         if (airOnly && sim.firstT >= 0 && t >= sim.firstT) break;
         if (sim.overT >= 0 && t >= sim.overT) break;
         const b = sim.S[j];
         if (b[1] > 2.5) continue;
         const d = Math.hypot(b[0] - f.hx, b[2] - f.hz) - f.reach;
-        if (d <= spd * (t - f.re)) { if (!best || t < best.t) best = { i, t, pos: b.slice() }; break; }
+        if (d <= spd * (t - re)) { if (!best || t < best.t) best = { i, t, pos: b.slice() }; break; }
       }
     });
     if (!best && fair && !overFirst && sim.overT < 0) {
@@ -991,23 +1006,30 @@
     }
     const air = best && (sim.firstT < 0 || best.t < sim.firstT);
     const deep = best && hdist(best.pos) > 42;
+    // 守備のエラー（アウトになるはずのフェアの打球で起こる）
+    const error = fair && Math.random() < (D.err || 0);
+    const errTone = mode === 'bat' ? 'good' : 'bad';
 
     if (air) {
-      // フライ・ライナーアウト
-      pl.kind = 'flyout'; pl.best = best;
+      // フライ・ライナーアウト（エラーなら落球で打者は一塁へ）
+      const drop = error;
+      pl.kind = drop ? 'error' : 'flyout'; pl.best = best;
       pl.dist = hdist(best.pos);
       const name = POS_NAME[fielders[best.i].id];
       const label = !fair ? 'ファウルフライ' : name + (la < 12 ? 'ライナー' : 'フライ');
-      ev(best.t, () => { catchBall(best.i); showMsg('アウト', label, 'bad'); });
+      ev(best.t, () => { catchBall(best.i); if (drop) showMsg('エラー', name + 'の落球', errTone, 2); else showMsg('アウト', label, 'bad'); });
       pl.liveEnd = best.t;
       if (deep) {
         const to = [BASES[2][0], 1.4, BASES[2][2]];
-        const dur = Math.max(0.35, Math.hypot(to[0] - best.pos[0], to[2] - best.pos[2]) / 30);
-        pl.thr = { start: best.t + 0.7, to, dur };
+        const dur = Math.max(0.35, Math.hypot(to[0] - best.pos[0], to[2] - best.pos[2]) / armV());
+        pl.thr = { start: best.t + holdT(drop ? 1.2 : 0.7), to, dur };
         pl.endT = pl.thr.start + dur + 0.7;
       } else pl.endT = best.t + 1.6;
-      if (fair && deep && game.outs < 2) tagUp(pl, best.t);
-      if (fair) runners.push({ b: 0, target: 1, speed: 0.27, delay: 0.5, out: true, batter: true, spd: batterSpd() });
+      if (drop) { pl.bases = 1; advanceAll(1); pl.endT = Math.max(pl.endT, runT(1) + 0.3); }
+      else {
+        if (fair && deep && game.outs < 2) tagUp(pl, best.t);
+        if (fair) runners.push({ b: 0, target: 1, speed: 0.27, delay: 0.5, out: true, batter: true, spd: batterSpd() });
+      }
     } else if (!fair) {
       pl.kind = 'foul';
       ev(decT, () => { showMsg('ファウル', '', 'neutral', 1.2); sfx.ooh(); });
@@ -1040,22 +1062,28 @@
       pl.dist = hdist(sim.firstPos);
       let n = 0;
       for (let k = 1; k <= 3; k++) {
-        const thr = best.t + 0.65 + Math.hypot(BASES[k][0] - best.pos[0], BASES[k][2] - best.pos[2]) / 30;
+        const thr = best.t + holdT(0.65) + Math.hypot(BASES[k][0] - best.pos[0], BASES[k][2] - best.pos[2]) / armV();
         if (runT(k) < thr - 0.15) n = k; else break;
       }
+      // ゴロのエラー（アウトのはずが悪送球で打者は一塁セーフ）
+      const bad = n === 0 && error;
+      if (bad) n = 1;
       pl.bases = n;
-      if (n === 0 && tryDoublePlay(pl, f, best)) return pl;
-      pl.kind = n === 0 ? 'groundout' : 'hit';
-      const tb = n === 0 ? BASES[1] : BASES[Math.min(n + 1, 4)];
-      const to = [tb[0], 1.3, tb[2]];
-      const dur = Math.max(0.3, Math.hypot(to[0] - best.pos[0], to[2] - best.pos[2]) / 30);
-      pl.thr = { start: best.t + 0.65, to, dur };
+      if (!bad && n === 0 && tryDoublePlay(pl, f, best)) return pl;
+      pl.kind = bad ? 'error' : n === 0 ? 'groundout' : 'hit';
+      const tb = n === 0 || bad ? BASES[1] : BASES[Math.min(n + 1, 4)];
+      const to = bad ? [tb[0] + 4, 0.6, tb[2] - 3] : [tb[0], 1.3, tb[2]];   // 悪送球は一塁手の後ろへ逸れる
+      const dur = Math.max(0.3, Math.hypot(to[0] - best.pos[0], to[2] - best.pos[2]) / armV());
+      pl.thr = { start: best.t + holdT(0.65), to, dur };
       const thrEnd = pl.thr.start + dur;
       ev(best.t, () => {
         catchBall(best.i);
-        if (n > 0) showMsg(['', 'ヒット', 'ツーベースヒット', 'スリーベースヒット'][n], la > 8 ? `飛距離 ${Math.round(pl.dist)}m` : '', 'good', 2);
+        if (n > 0 && !bad) showMsg(['', 'ヒット', 'ツーベースヒット', 'スリーベースヒット'][n], la > 8 ? `飛距離 ${Math.round(pl.dist)}m` : '', 'good', 2);
       });
-      ev(thrEnd, () => { sfx.glove(); if (n === 0) showMsg('アウト', POS_NAME[f.id] + 'ゴロ', 'bad'); });
+      ev(thrEnd, () => {
+        if (bad) { showMsg('エラー', POS_NAME[f.id] + 'の悪送球', errTone, 2); return; }
+        sfx.glove(); if (n === 0) showMsg('アウト', POS_NAME[f.id] + 'ゴロ', 'bad');
+      });
       pl.liveEnd = la > 8 ? sim.firstT : 0;
       pl.endT = Math.max(thrEnd + 0.9, Math.min(runT(Math.max(n, 1)) + 0.3, thrEnd + 2.6));
       if (n === 0) runners.push({ b: 0, target: 1, speed: 0.27, delay: 0.5, out: true, batter: true, spd: batterSpd() });
@@ -1072,11 +1100,11 @@
     const r1 = on(1);
     if (!r1) return false;
     const to2 = [BASES[2][0], 1.3, BASES[2][2]], to1 = [BASES[1][0], 1.3, BASES[1][2]];
-    const start = best.t + 0.55;
-    const dur2 = Math.max(0.3, Math.hypot(to2[0] - best.pos[0], to2[2] - best.pos[2]) / 30);
+    const start = best.t + holdT(0.55);
+    const dur2 = Math.max(0.3, Math.hypot(to2[0] - best.pos[0], to2[2] - best.pos[2]) / armV());
     const end2 = start + dur2;
-    const relay = end2 + 0.45;
-    const dur1 = Math.hypot(to1[0] - to2[0], to1[2] - to2[2]) / 30;
+    const relay = end2 + holdT(0.45);
+    const dur1 = Math.hypot(to1[0] - to2[0], to1[2] - to2[2]) / armV();
     const end1 = relay + dur1;
     const r1Arrive = 0.3 + 1 / (0.27 * (r1.spd || 1));
     if (r1Arrive < end2 + 0.1 || end1 > runT(1) - 0.3) return false;   // どちらかが間に合わなければ通常のゴロ
@@ -1213,7 +1241,7 @@
   function updateFielders(dt) {
     const pl = play, b = ballPos;
     fielders.forEach((f, i) => {
-      if (pl.t < f.re) return;
+      if (pl.t < reactT(f)) return;
       const spd = f.sp * D.field;
       if (pl.best && i === pl.best.i) {
         if (pl.holder !== i) moveToward(f, pl.best.pos[0], pl.best.pos[2], spd, 0, dt);
@@ -1947,7 +1975,7 @@
 
     crew.forEach((f, i) => {
       let J, alpha = 1, glove = true, mitt = false, ovW = null, ball = false;
-      if (i === 0 && (st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hbp' || st === 'hitstop' || (st === 'play' && play.t < f.re))) {
+      if (i === 0 && (st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hbp' || st === 'hitstop' || (st === 'play' && play.t < reactT(f)))) {
         J = st === 'aim' ? pitcherJoints('set')
           : st === 'windup' ? pitcherJoints(game.st < 0.25 ? 'set' : 'wind', clamp((game.st - 0.25) / (WINDUP - 0.25), 0, 1)) : pitcherJoints('follow');
         ball = st === 'windup' || st === 'aim';
