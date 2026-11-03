@@ -111,7 +111,7 @@
     hard:   { rx: 0.14, ry: 0.105, win: 0.09, read: 0.62, adapt: 0.78, field: 0.95 },
   };
   // 試合モードの対戦校。bat: 自分が打つときの相手投手・守備（DIFFS と同じ形）、pit: 自分が投げるときの相手打線（PDIFFS と同じ形）
-  // pit.pow / pit.spd: 相手打線のパワー・走力の倍率
+  // pit の rx/ry（当たり範囲）とパワー・走力は試合では使わず、打者ごとの能力（VS_LINEUP）で表す。read/adapt/win はチーム全体の巧さ
   const ALL_TYPES = DIFFS.hard.types;
   // def: 自分が打つときの相手守備
   //   field: 野手の走る速さ, react: 打球への反応の遅さ（倍率）, arm: 送球の速さ, hold: 捕ってから投げるまでの時間（倍率）, err: アウトになる打球でエラーする確率
@@ -123,16 +123,16 @@
     strong: { name: '強豪校',     desc: '甲子園常連。投打ともに隙がない', bat: DIFFS.hard, pit: PDIFFS.hard,
               def: { field: 1.06, react: 0.88, arm: 1.1, hold: 0.88, err: 0.015 } },
     slug:   { name: '強打の名門', desc: '投手はそこそこだが、打線は長打力抜群。守備は少し雑',
-              bat: DIFFS.normal, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95, pow: 1.25 },
+              bat: DIFFS.normal, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95 },
               def: { field: 0.95, react: 1.12, arm: 1.0, hold: 1.12, err: 0.06 } },
     ace:    { name: '投手王国',   desc: '150km/h超えのエースと鋭い変化球。打線は並',
               bat: { ...DIFFS.hard, brk: 1.4 }, pit: PDIFFS.normal,
               def: { field: 1.04, react: 0.95, arm: 1.05, hold: 0.95, err: 0.025 } },
     speed:  { name: '機動力の雄', desc: '俊足ぞろいで守備も堅い。内野ゴロでも気が抜けない',
-              bat: DIFFS.hard, pit: { ...PDIFFS.hard, read: 0.66, pow: 0.9, spd: 1.25 },
+              bat: DIFFS.hard, pit: { ...PDIFFS.hard, read: 0.66 },
               def: { field: 1.12, react: 0.85, arm: 1.08, hold: 0.82, err: 0.015 } },
     king:   { name: '絶対王者',   desc: '全国制覇の最強校。投打走すべてが一枚上',
-              bat: { ...DIFFS.hard, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92, pow: 1.15, spd: 1.1 },
+              bat: { ...DIFFS.hard, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92 },
               def: { field: 1.1, react: 0.82, arm: 1.15, hold: 0.82, err: 0.005 } },
   };
   let selSchool = 'mid';
@@ -150,9 +150,12 @@
     ace:    { vmin: 148, vmax: 163 },
     king:   { vmin: 155, vmax: 170 },
   };
+  // 試合モードの相手打線は、打者ごとの能力（VS_LINEUP で作る ミート・パワー・走力）で強さを出すので、
+  // チーム全体のバットの当たり範囲・パワー・走力の倍率は標準にそろえる（二重にかからないように）
+  const VS_PIT_BASE = { rx: PDIFFS.normal.rx, ry: PDIFFS.normal.ry, pow: 1, spd: 1 };
   const diffFor = m => {
     if (!vs) return (m === 'pitch' ? PDIFFS : DIFFS)[selDiff];
-    if (m === 'pitch') return SCHOOLS[selSchool].pit;
+    if (m === 'pitch') return { ...SCHOOLS[selSchool].pit, ...VS_PIT_BASE };
     return { ...SCHOOLS[selSchool].bat, ...VS_VELO[selSchool], ...SCHOOLS[selSchool].def, ...VS_BAT_ZONE };
   };
   // 守備の補正（未指定なら標準）
@@ -167,6 +170,34 @@
     { con: 0.98, pow: 1.22, eye: 1.0,  spd: 0.86 }, { con: 0.97, pow: 1.12, eye: 0.95, spd: 0.92 }, { con: 1.0,  pow: 1.0,  eye: 1.0,  spd: 1.0 },
     { con: 0.94, pow: 0.95, eye: 0.9,  spd: 1.08 }, { con: 0.9,  pow: 0.88, eye: 0.85, spd: 0.95 }, { con: 0.84, pow: 0.8,  eye: 0.8,  spd: 0.9 },
   ];
+  // 試合モードの対戦校ごとの打線。試合開始時に作る
+  //   lv: チームの基本能力, lo/hi: 能力の下限・上限, add: チーム特有の上乗せ
+  //   ランクの目安は grade(): S ≥1.15, A ≥1.07, B ≥1.0, C ≥0.93, D ≥0.86, E それ未満
+  const VS_LINEUP = {
+    weak:   { lv: 0.88, lo: 0.74, hi: 1.06 },                          // 最高でも B
+    slug:   { lv: 0.99, lo: 0.82, hi: 1.22, add: { pow: 0.09 } },     // 長打力。クリーンナップは S も
+    mid:    { lv: 0.98, lo: 0.8,  hi: 1.12 },                          // A がちらほら
+    ace:    { lv: 0.98, lo: 0.8,  hi: 1.12 },                          // 打線は並
+    speed:  { lv: 1.0,  lo: 0.84, hi: 1.2,  add: { spd: 0.1, pow: -0.04 } },
+    strong: { lv: 1.04, lo: 0.88, hi: 1.14 },                          // A が多め（S はなし）
+    king:   { lv: 1.11, lo: 1.07, hi: 1.26 },                          // ほぼ A、クリーンナップは S
+  };
+  // 打順ごとの役割（1・2番: 俊足巧打、3〜5番: クリーンナップ、下位打線は控えめ）
+  const ORDER_ROLE = [
+    { con: 0.04, pow: -0.1, eye: 0.1, spd: 0.12 }, { con: 0.03, pow: -0.08, eye: 0.06, spd: 0.06 }, { con: 0.07, pow: 0.05, eye: 0.06, spd: 0 },
+    { con: 0.02, pow: 0.14, eye: 0, spd: -0.1 }, { con: 0.01, pow: 0.1, eye: -0.02, spd: -0.06 }, { con: 0, pow: 0, eye: 0, spd: 0 },
+    { con: -0.03, pow: -0.04, eye: -0.05, spd: 0.04 }, { con: -0.06, pow: -0.08, eye: -0.08, spd: -0.02 }, { con: -0.1, pow: -0.12, eye: -0.12, spd: -0.05 },
+  ];
+  function makeLineup(school) {
+    const L = VS_LINEUP[school];
+    return ORDER_ROLE.map(r => {
+      const b = {};
+      for (const k of ['con', 'pow', 'eye', 'spd']) b[k] = Math.round(clamp(L.lv + r[k] + ((L.add && L.add[k]) || 0) + rand(-0.03, 0.03), L.lo, L.hi) * 100) / 100;
+      return b;
+    });
+  }
+  let vsLineup = LINEUP;
+  const lineup = () => (vs ? vsLineup : LINEUP);
   const P_TYPES = ['ストレート', '剛速球', 'ライジング','カーブ', 'スローカーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'スイーパー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ムービング', 'ナックル', 'イーファス'];
   const P_SHORT = { 'ナックルカーブ': 'ナックルC', 'スローカーブ': 'スローC', '縦スライダー': '縦スラ', 'チェンジアップ': 'チェンジ', 'カットボール': 'カット', 'スプリット': 'スプリ' };
   // 12番目は JIS キーボードの「^」（US 配列では「=」）、13番目は「¥」（US 配列では「\」）、14番目は「@」（US 配列では「[」）、15番目は「[」（US 配列では「]」）、16番目は「;」、17番目は「:」（US 配列では「'」）
@@ -577,7 +608,7 @@
       $('stats').innerHTML = `ストライク率 <b>${rate}</b> PERFECT <b>${prac.perfect}</b> 最速 <b>${prac.best ? prac.best + 'km/h' : '-'}</b>`;
     } else if (mode === 'pitch') {
       $('stats').innerHTML = `<b>${inningLbl()}</b> <b>${game.ks}K</b> 被安打 <b>${game.hits}</b> 球数 <b>${game.pitches}</b>`;
-      const n = game.batter % LINEUP.length, b = LINEUP[n];
+      const n = game.batter % lineup().length, b = lineup()[n];
       $('batterInfo').innerHTML = `${n + 1}番打者　ミート <b>${grade(b.con)}</b> パワー <b>${grade(b.pow)}</b> 走力 <b>${grade(b.spd)}</b>`;
       const bar = $('staBar');
       bar.style.width = stamina + '%';
@@ -727,7 +758,7 @@
 
   // CPU打者: 見えたコースと予想タイミングからスイングを決める
   function planBatter(p) {
-    const b = LINEUP[game.batter % LINEUP.length];
+    const b = lineup()[game.batter % lineup().length];
     const def = PITCHES[p.name];
     const cross = pitchPos(p, 1);
     // 遅い球ほど変化を見極めやすく、同じ球種が続くと慣れる
@@ -1011,7 +1042,7 @@
     return mix(S[i], S[i + 1], f - i);
   }
   // 打者の走力（バッティングモードの自分は 1）
-  const batterSpd = () => (mode === 'pitch' ? LINEUP[game.batter % LINEUP.length].spd * (D.spd || 1) : 1);
+  const batterSpd = () => (mode === 'pitch' ? lineup()[game.batter % lineup().length].spd * (D.spd || 1) : 1);
   const runT = n => 0.5 + n * 3.7 / batterSpd();   // 打者走者が n 塁に到達する時刻
 
   function planPlay(p0, v0, la, spray) {
@@ -1864,7 +1895,7 @@
       hip: [-0.08 * sw, 0.88, -0.05], sh: [-0.1 * sw, 1.38, -0.02],
       hl: [0, 0, 0], hr: [0, 0, 0], head: [-0.04 - 0.08 * sw, 1.58, 0.02],
     };
-    drawPerson({ x: bX(), z: bZ(), face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h }, bat: true, num: mode === 'pitch' ? game.batter % LINEUP.length + 1 : 51 });
+    drawPerson({ x: bX(), z: bZ(), face: PI / 2, J, col: BAT_COL, ovW: { hl: bp.h, hr: bp.h }, bat: true, num: mode === 'pitch' ? game.batter % lineup().length + 1 : 51 });
     const mid = add(bp.h, mul(bp.d, 0.42)), tip = add(bp.h, mul(bp.d, 0.86));
     limb(bp.h, mid, 0.035, '#c9995e');
     limb(mid, tip, 0.065, '#d9b07a');
@@ -2205,6 +2236,7 @@
     if (vs) {
       mode = 'bat';
       Object.assign(vsm, { line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false });
+      vsLineup = makeLineup(selSchool);
     }
     D = diffFor(mode);
     rollLefty();
