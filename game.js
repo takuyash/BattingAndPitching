@@ -75,7 +75,7 @@
   const DIFFS = {
     easy:   { vmin: 95,  vmax: 118, brk: 0.55, rx: 0.23, ry: 0.14,  win: 0.32,  field: 0.85, types: ['ストレート', 'カーブ', 'チェンジアップ'] },
     normal: { vmin: 120, vmax: 145, brk: 1.0,  rx: 0.19, ry: 0.115, win: 0.26,  field: 1.0,  types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート'] },
-    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.16, ry: 0.095, win: 0.205, field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール'] },
+    hard:   { vmin: 135, vmax: 158, brk: 1.3,  rx: 0.16, ry: 0.095, win: 0.205, field: 1.06, types: ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'カットボール', 'ムービング'] },
   };
   // drop: 手元で落ちる量（途中まではストレートと同じ軌道を通り、本塁の直前で s^DROP_BEND で落ちる。正なら浮き上がる）
   const DROP_BEND = 5;
@@ -88,6 +88,8 @@
     'チェンジアップ': { sp: 0.82, bx: -0.15, by: -0.35, w: 1 },
     'シュート':     { sp: 0.93, bx: -0.28, by: -0.15, w: 1 },
     'カットボール': { sp: 0.95, bx: 0.14,  by: -0.12, w: 1 },
+    // moving: 投げるたびに左右・上下どちらかへ手元で小さく不規則に動く（向きは投げた本人にも読めない）
+    'ムービング':   { sp: 0.97, bx: 0.0,   by: -0.12, w: 1.2, moving: true, rd: -0.15 },
     // 以下はピッチングモード専用 (cost: スタミナ消費, ctl: ばらつき倍率, rd: 打者の見極め補正)
     '剛速球':       { sp: 1.137,bx: 0.0,   by: -0.06, cost: 2.8, ctl: 1.35, heat: true },
     'ライジング':   { sp: 0.99, bx: 0.0,   by: -0.12, drop: 0.3, cost: 2.0 },
@@ -121,16 +123,16 @@
     strong: { name: '強豪校',     desc: '甲子園常連。投打ともに隙がない', bat: DIFFS.hard, pit: PDIFFS.hard,
               def: { field: 1.06, react: 0.88, arm: 1.1, hold: 0.88, err: 0.015 } },
     slug:   { name: '強打の名門', desc: '投手はそこそこだが、打線は長打力抜群。守備は少し雑',
-              bat: { ...DIFFS.normal, vmin: 128, vmax: 148 }, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95, pow: 1.25 },
+              bat: DIFFS.normal, pit: { rx: 0.15, ry: 0.11, win: 0.095, read: 0.6, adapt: 0.8, field: 0.95, pow: 1.25 },
               def: { field: 0.95, react: 1.12, arm: 1.0, hold: 1.12, err: 0.06 } },
     ace:    { name: '投手王国',   desc: '150km/h超えのエースと鋭い変化球。打線は並',
-              bat: { ...DIFFS.hard, vmin: 142, vmax: 160, brk: 1.4 }, pit: PDIFFS.normal,
+              bat: { ...DIFFS.hard, brk: 1.4 }, pit: PDIFFS.normal,
               def: { field: 1.04, react: 0.95, arm: 1.05, hold: 0.95, err: 0.025 } },
     speed:  { name: '機動力の雄', desc: '俊足ぞろいで守備も堅い。内野ゴロでも気が抜けない',
-              bat: { ...DIFFS.hard, vmin: 128, vmax: 150 }, pit: { ...PDIFFS.hard, read: 0.66, pow: 0.9, spd: 1.25 },
+              bat: DIFFS.hard, pit: { ...PDIFFS.hard, read: 0.66, pow: 0.9, spd: 1.25 },
               def: { field: 1.12, react: 0.85, arm: 1.08, hold: 0.82, err: 0.015 } },
     king:   { name: '絶対王者',   desc: '全国制覇の最強校。投打走すべてが一枚上',
-              bat: { ...DIFFS.hard, vmin: 145, vmax: 162, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92, pow: 1.15, spd: 1.1 },
+              bat: { ...DIFFS.hard, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92, pow: 1.15, spd: 1.1 },
               def: { field: 1.1, react: 0.82, arm: 1.15, hold: 0.82, err: 0.005 } },
   };
   let selSchool = 'mid';
@@ -138,10 +140,20 @@
   // 試合モードで自分が打つときのバットの当たり範囲・タイミングの猶予は対戦校によらず一定（ノーマルと同じ）。
   // 対戦校の強さは投手の球速・変化量・球種と守備力で表現する
   const VS_BAT_ZONE = { rx: DIFFS.normal.rx, ry: DIFFS.normal.ry, win: DIFFS.normal.win };
+  // 試合モードの相手投手の球速 (km/h)。vmax がストレートの最速（変化球はこれに球種ごとの倍率がかかる）
+  const VS_VELO = {
+    weak:   { vmin: 82,  vmax: 100 },
+    slug:   { vmin: 115, vmax: 136 },
+    mid:    { vmin: 120, vmax: 142 },
+    speed:  { vmin: 128, vmax: 148 },
+    strong: { vmin: 138, vmax: 155 },
+    ace:    { vmin: 148, vmax: 163 },
+    king:   { vmin: 155, vmax: 170 },
+  };
   const diffFor = m => {
     if (!vs) return (m === 'pitch' ? PDIFFS : DIFFS)[selDiff];
     if (m === 'pitch') return SCHOOLS[selSchool].pit;
-    return { ...SCHOOLS[selSchool].bat, ...SCHOOLS[selSchool].def, ...VS_BAT_ZONE };
+    return { ...SCHOOLS[selSchool].bat, ...VS_VELO[selSchool], ...SCHOOLS[selSchool].def, ...VS_BAT_ZONE };
   };
   // 守備の補正（未指定なら標準）
   const THROW_V = 30;   // 送球の速さ (m/s)
@@ -155,7 +167,7 @@
     { con: 0.98, pow: 1.22, eye: 1.0,  spd: 0.86 }, { con: 0.97, pow: 1.12, eye: 0.95, spd: 0.92 }, { con: 1.0,  pow: 1.0,  eye: 1.0,  spd: 1.0 },
     { con: 0.94, pow: 0.95, eye: 0.9,  spd: 1.08 }, { con: 0.9,  pow: 0.88, eye: 0.85, spd: 0.95 }, { con: 0.84, pow: 0.8,  eye: 0.8,  spd: 0.9 },
   ];
-  const P_TYPES = ['ストレート', '剛速球', 'ライジング','カーブ', 'スローカーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'スイーパー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ナックル', 'イーファス'];
+  const P_TYPES = ['ストレート', '剛速球', 'ライジング','カーブ', 'スローカーブ', 'ナックルカーブ', 'スライダー', '縦スライダー', 'スイーパー', 'フォーク', 'スプリット', 'チェンジアップ', 'シュート', 'シンカー', 'カットボール', 'ムービング', 'ナックル', 'イーファス'];
   const P_SHORT = { 'ナックルカーブ': 'ナックルC', 'スローカーブ': 'スローC', '縦スライダー': '縦スラ', 'チェンジアップ': 'チェンジ', 'カットボール': 'カット', 'スプリット': 'スプリ' };
   // 12番目は JIS キーボードの「^」（US 配列では「=」）、13番目は「¥」（US 配列では「\」）、14番目は「@」（US 配列では「[」）、15番目は「[」（US 配列では「]」）、16番目は「;」、17番目は「:」（US 配列では「'」）
   const P_DESC = {
@@ -173,6 +185,7 @@
     'シュート': '右打者の内角へ食い込む',
     'シンカー': '内角へ曲がりながら沈む',
     'カットボール': '速くて小さく曲がる',
+    'ムービング': 'ストレートの球速で、手元で左右や下へ小さく不規則に動く',
     'ナックル': '揺れて行き先が読めない魔球',
     'イーファス': '高く山なりに放る超スローボール。タイミングを大きく外す',
   };
@@ -190,8 +203,8 @@
     if (Array.isArray(saved) && saved.length === ARSENAL_SIZE && saved.every(n => P_DESC[n])) arsenal = saved;
   } catch (e) { /* 保存領域が使えなくても既定の持ち球で遊べる */ }
   let myPitches = [];
-  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen', 'BracketLeft', 'BracketRight', 'Semicolon', 'Quote'];
-  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥', '@', '[', ';', ':'];
+  const P_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen', 'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'Comma'];
+  const P_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥', '@', '[', ';', ':', ','];
   // P_VMAX: ストレートの最高球速, P_BRK: 変化量の倍率, P_BEND: 曲がり始めの遅さ（大きいほど手元で鋭く曲がる）
   const P_VMAX = 148, P_BRK = 2.1, P_BEND = 3, INNINGS = 3;
   // 落ちる球の倍率は P_BRK より小さくする（落ち幅が大きすぎると、途中のストレート軌道が上向きになり浮いてから落ちて見える）
@@ -579,8 +592,16 @@
     if (Math.random() < 0.6) { tx = rand(-0.2, 0.2); ty = rand(0.52, 1.04); }
     else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
+    if (def.moving) return buildPitch(name, kmh, [tx, ty, 0], movingBrk(def.by, D.brk), MOVING_BEND);
     const brk = [def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
     return buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
+  }
+  // ムービングの変化: 向き（シュート・カット・沈む方向のどれか寄り）と大きさを毎回ランダムに。手元で急に効く
+  const MOVING_BEND = 4;
+  function movingBrk(by, k) {
+    const a = rand(-PI, 0);   // 左右〜下方向（浮き上がりはしない）
+    const m = rand(0.07, 0.15) * k;
+    return [Math.cos(a) * m, by * k + Math.sin(a) * m, 0];
   }
   // tgt: 本塁上を通過する位置, brk: 変化量（右投手基準）, bend: 変化の効き始め（s^bend で曲がる）, drop: 手元での落ち幅
   // 左投手はリリース位置と横の変化を左右反転する（本塁上の通過位置 tgt は変わらない）
@@ -676,6 +697,12 @@
       const p = buildPitch(selPitch, kmh, add(tgt, brk), brk);
       p.wob = { ax: rand(0.04, 0.08) * P_BRK * (Math.random() < 0.5 ? -1 : 1), ay: rand(0.03, 0.06) * P_BRK, f: rand(2, 3.5) * PI * 2, ph: rand(0, PI * 2) };
       return p;
+    }
+    if (def.moving) {
+      // 狙った位置からどちらへずれるかは投げた本人にも読めない
+      const brk = movingBrk(def.by, P_BRK);
+      const want = [def.bx * P_BRK, def.by * P_BRK, 0];
+      return buildPitch(selPitch, kmh, add(tgt, sub(brk, want)), brk, MOVING_BEND);
     }
     return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND, (def.drop || 0) * dropK(def.drop) * rand(0.9, 1.1));
   }
@@ -2066,7 +2093,7 @@
     document.body.classList.toggle('practice', practice);
     document.body.classList.toggle('vs', vs);
     $('help').textContent = practice
-      ? 'マウスで狙う ／ クリックで投球 → リングが的に重なる瞬間にもう一度クリック ／ 1〜0・-・^・¥・@・[・;・:キーで球種 ／ Escで終了'
+      ? 'マウスで狙う ／ クリックで投球 → リングが的に重なる瞬間にもう一度クリック ／ 1〜0・-・^・¥・@・[・;・:・,キーで球種 ／ Escで終了'
       : P ? 'マウスで狙う ／ クリックで投球 → 縮むリングが的に重なる瞬間にもう一度クリック ／ 1〜6キーで球種'
       : touch ? '画面をなぞってカーソル移動 ／ ボタンでスイング' : 'マウスでカーソル移動 ／ クリック・スペースでスイング ／ I・J・K・Lで立ち位置';
     $('swingBtn').textContent = P ? '投げる' : 'スイング';
