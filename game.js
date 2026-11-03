@@ -492,9 +492,25 @@
   // バッティング時の相手投手が左投げか（イニングごとに決め直す）
   const LEFTY_RATE = 0.35;
   let oppLefty = false;
-  // 左右が変わったら true を返す
-  const rollLefty = () => { const was = oppLefty; oppLefty = Math.random() < LEFTY_RATE; return was !== oppLefty; };
-  const handLbl = () => (oppLefty ? '左投手' : '右投手');
+  // 相手投手の投げ方（オーバー・サイド・アンダー）
+  //   rel: リリース位置 (x は右投手基準, y は高さ), sp: 球速の倍率, bx/by: 横・縦の変化量の倍率, rate: 出現率
+  const ARM_STYLES = {
+    over:  { name: '',             rel: [-0.4, 1.85],  sp: 1,    bx: 1,    by: 1,    rate: 0.65 },
+    side:  { name: 'サイドスロー',   rel: [-0.9, 1.25],  sp: 0.97, bx: 1.3,  by: 0.8,  rate: 0.22 },
+    under: { name: 'アンダースロー', rel: [-0.55, 0.55], sp: 0.9,  bx: 1.15, by: 0.65, rate: 0.13 },
+  };
+  let oppArm = 'over';
+  const armStyle = () => ARM_STYLES[mode === 'bat' ? oppArm : 'over'];
+  // 左右・投げ方が変わったら true を返す
+  const rollLefty = () => {
+    const was = (oppLefty ? 'L' : 'R') + oppArm;
+    oppLefty = Math.random() < LEFTY_RATE;
+    let r = Math.random();
+    oppArm = 'over';
+    for (const k in ARM_STYLES) { r -= ARM_STYLES[k].rate; if (r < 0) { oppArm = k; break; } }
+    return was !== (oppLefty ? 'L' : 'R') + oppArm;
+  };
+  const handLbl = () => (oppLefty ? '左' : '右') + (ARM_STYLES[oppArm].name ? 'の' + ARM_STYLES[oppArm].name : '投手');
   // ピッチング時の自分の利き腕（タイトルで選び、保存しておく）
   const HAND_KEY = 'homerun-stadium-hand';
   let myLefty = false;
@@ -587,13 +603,14 @@
     let r = Math.random() * total, name = D.types[0];
     for (const n of D.types) { r -= PITCHES[n].w; if (r <= 0) { name = n; break; } }
     const def = PITCHES[name];
-    const kmh = rand(D.vmin, D.vmax) * def.sp;
+    const A = armStyle();
+    const kmh = rand(D.vmin, D.vmax) * def.sp * A.sp;
     let tx, ty;
     if (Math.random() < 0.6) { tx = rand(-0.2, 0.2); ty = rand(0.52, 1.04); }
     else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
     if (def.moving) return buildPitch(name, kmh, [tx, ty, 0], movingBrk(def.by, D.brk), MOVING_BEND);
-    const brk = [def.bx * D.brk * rand(0.8, 1.15), def.by * D.brk * rand(0.8, 1.15), 0];
+    const brk = [def.bx * A.bx * D.brk * rand(0.8, 1.15), def.by * A.by * D.brk * rand(0.8, 1.15), 0];
     return buildPitch(name, kmh, [tx, ty, 0], brk, 2, (def.drop || 0) * D.brk * rand(0.8, 1.15));
   }
   // ムービングの変化: 向き（シュート・カット・沈む方向のどれか寄り）と大きさを毎回ランダムに。手元で急に効く
@@ -610,7 +627,8 @@
     brk = [brk[0] * hand, brk[1], brk[2]];
     const aim = sub(tgt, brk);
     aim[1] -= drop;
-    return { name, kmh: Math.round(kmh), rel: [REL[0] * hand, REL[1], REL[2]], aim, brk, bend, drop, arc: PITCHES[name].arc || 0, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
+    const rel = armStyle().rel;
+    return { name, kmh: Math.round(kmh), rel: [rel[0] * hand, rel[1], REL[2]], aim, brk, bend, drop, arc: PITCHES[name].arc || 0, T: REL[2] / (kmh / 3.6), sEnd: 1 + 0.95 / REL[2], t0: 0, t: 0, crossed: false, swung: false, swingT: 0, cross: null, inZone: false, cpu: null, wob: null };
   }
   function pitchPos(p, s) {
     const k = Math.pow(s, p.bend);
@@ -1537,9 +1555,37 @@
         return { fl: [-0.14, 0, 0], fr: [0.14, 0, 0], hip: [0, 0.95, 0], sh: [0, 1.45, 0], hl: [-0.24, 0.96, 0.06], hr: [0.24, 0.96, 0.06], head: [0, 1.64, 0] };
     }
   }
-  function pitcherJoints(mode, p) {
+  // サイドスロー・アンダースローの腕の通り道と体の傾き（back: テイクバック, top: 振り出し, rel: リリース）
+  const ARM_POSE = {
+    side:  { back: [0.75, 1.3, -0.5], top: [0.95, 1.3, 0.15], rel: [0.9, 1.25, 0.85],
+             hip: [0, 0.8, 0.3], sh: [0.08, 1.3, 0.35], head: [0.12, 1.5, 0.42], follow: [-0.45, 1.05, 0.55] },
+    under: { back: [0.5, 0.8, -0.6], top: [0.62, 0.45, 0.2], rel: [0.55, 0.55, 0.85],
+             hip: [0, 0.7, 0.3], sh: [0.06, 1.12, 0.48], head: [0.08, 1.3, 0.6], follow: [-0.2, 1.35, 0.75] },
+  };
+  function pitcherJoints(mode, p, arm = 'over') {
     const J = poseJoints('stand');
+    const AP = ARM_POSE[arm];
     if (mode === 'set') { J.hl = [-0.05, 1.25, 0.18]; J.hr = [0.05, 1.25, 0.18]; }
+    else if (mode === 'wind' && AP && p >= 0.35) {
+      if (p < 0.75) {
+        const u = smooth((p - 0.35) / 0.4);
+        J.fl = [lerp(-0.15, -0.22, u), lerp(0.55, 0, u), lerp(0.15, 0.95, u)];
+        J.hr = mix([0.05, 1.35, 0.18], AP.back, u);
+        J.hl = mix([-0.05, 1.35, 0.18], [-0.35, 1.25, 0.5], u);
+        J.hip = mix([0, 0.95, -0.05], AP.hip, u);
+        J.sh = mix([0, 1.45, 0], AP.sh, u);
+        J.head = mix([0, 1.64, 0], AP.head, u);
+      } else {
+        const u = (p - 0.75) / 0.25;
+        J.hr = u < 0.5 ? mix(AP.back, AP.top, u * 2) : mix(AP.top, AP.rel, (u - 0.5) * 2);
+        J.fl = [-0.22, 0, 0.95]; J.hl = [-0.3, 1.0, 0.4];
+        J.hip = AP.hip; J.sh = AP.sh; J.head = AP.head;
+      }
+    } else if (mode === 'follow' && AP) {
+      J.fl = [-0.22, 0, 0.95]; J.fr = [0.2, 0.25, -0.3];
+      J.hr = AP.follow; J.hl = [-0.35, 0.95, 0.1];
+      J.hip = [0, AP.hip[1] - 0.05, 0.35]; J.sh = [AP.sh[0], AP.sh[1] - 0.1, 0.6]; J.head = [AP.head[0], AP.head[1] - 0.1, 0.72];
+    }
     else if (mode === 'wind') {
       if (p < 0.35) {
         const u = smooth(p / 0.35);
@@ -2003,8 +2049,9 @@
     crew.forEach((f, i) => {
       let J, alpha = 1, glove = true, mitt = false, ovW = null, ball = false;
       if (i === 0 && (st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hbp' || st === 'hitstop' || (st === 'play' && play.t < reactT(f)))) {
+        const arm = mode === 'bat' ? oppArm : 'over';
         J = st === 'aim' ? pitcherJoints('set')
-          : st === 'windup' ? pitcherJoints(game.st < 0.25 ? 'set' : 'wind', clamp((game.st - 0.25) / (WINDUP - 0.25), 0, 1)) : pitcherJoints('follow');
+          : st === 'windup' ? pitcherJoints(game.st < 0.25 ? 'set' : 'wind', clamp((game.st - 0.25) / (WINDUP - 0.25), 0, 1), arm) : pitcherJoints('follow', 0, arm);
         ball = st === 'windup' || st === 'aim';
       } else if (i === 1 && batting) {
         // 打席視点ではキャッチャーの体がゾーンに重なるのでミットだけ描く
