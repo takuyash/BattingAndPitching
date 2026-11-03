@@ -126,7 +126,13 @@
   };
   let selSchool = 'mid';
   // 現在のモードで使う難易度（試合モードは対戦校から）
-  const diffFor = m => (vs ? SCHOOLS[selSchool][m === 'pitch' ? 'pit' : 'bat'] : (m === 'pitch' ? PDIFFS : DIFFS)[selDiff]);
+  // 試合モードで自分が打つときのバットの当たり範囲は対戦校によらず一定（中堅校＝ノーマルの大きさ）
+  const VS_BAT_ZONE = { rx: DIFFS.normal.rx, ry: DIFFS.normal.ry };
+  const diffFor = m => {
+    if (!vs) return (m === 'pitch' ? PDIFFS : DIFFS)[selDiff];
+    if (m === 'pitch') return SCHOOLS[selSchool].pit;
+    return { ...SCHOOLS[selSchool].bat, ...VS_BAT_ZONE };
+  };
   // 相手打線 (con: ミート, pow: パワー, eye: 選球眼)
   // spd: 走力（塁間を走る速さの倍率）
   const LINEUP = [
