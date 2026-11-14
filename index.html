@@ -28,6 +28,7 @@
     <div id="batterInfo" class="pitch-only match-only"></div>
     <button id="quitBtn" class="practice-only">練習終了</button>
     <button id="pauseBtn" aria-label="一時停止">II</button>
+    <button id="rotBtn" class="bat-only" title="打撃の四角の向きを変える（横・斜め・縦）">向き <b id="rotState">横</b><small class="pc-only">R</small></button>
     <button id="buntBtn" class="bat-only" aria-pressed="false" title="バントの構え（スイングの操作でバットを引く）">バント <b id="buntState">OFF</b><small class="pc-only">B</small></button>
     <button id="timingBtn" class="bat-only" aria-pressed="true" title="打ち頃に打撃の枠が緑に光る">タイミング <b id="timingState">ON</b><small class="pc-only">T</small></button>
     <div id="live"></div>
@@ -131,6 +132,7 @@
         <li>早めに振ると引っ張り（レフト方向）、遅いと流し打ち</li>
         <li>ボールの少し下を打つとフライ、上を叩くとゴロになる</li>
         <li>打ち頃になると打撃の枠が<b>緑に光る</b>。右上のボタン<span class="pc-only">（Tキー）</span>でオン・オフ</li>
+        <li>右上の<b>向き</b>ボタン<span class="pc-only">（Rキー）</span>で打撃の四角を 横・斜め・縦 に回せる。高め・低めや内角・外角に合わせよう</li>
         <li>右上の<b>バント</b>ボタン<span class="pc-only">（Bキー）</span>で構える。紫の帯にボールが触れると転がる。スイングの操作でバットを引いて見送り。2ストライクからのファウルは三振</li>
       </ul>
       <ul class="howto pitch-only">

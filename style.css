@@ -48,6 +48,9 @@ body.playing #game { cursor: none; }
 }
 .score { display: flex; flex-direction: column; align-items: center; min-width: 48px; }
 .score .lbl { font-size: 11px; opacity: 0.7; }
+/* 試合: 対戦校の名前 */
+.score .lbl.vs-lbl { margin-bottom: 2px; font-size: 13px; font-weight: 700; opacity: 1; white-space: nowrap; }
+.vs-name { color: #ffd84a; }
 #runs { font-size: 32px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 
 .counts { display: flex; flex-direction: column; gap: 3px; }
@@ -215,6 +218,27 @@ body.touch #stance { bottom: calc(130px + env(safe-area-inset-bottom)); }
   pointer-events: auto;
   touch-action: manipulation;
 }
+#rotBtn {
+  position: absolute;
+  right: calc(14px + env(safe-area-inset-right));
+  top: calc(172px + env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #cfd8e6;
+  background: rgba(10, 20, 35, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#rotBtn b { min-width: 28px; padding: 1px 6px; border-radius: 4px; background: #ffd43a; color: #10203a; text-align: center; }
+#rotBtn small { font-weight: 400; opacity: 0.6; }
 #buntBtn {
   position: absolute;
   right: calc(14px + env(safe-area-inset-right));
@@ -244,6 +268,7 @@ body.touch #stance { bottom: calc(130px + env(safe-area-inset-bottom)); }
 @media (max-height: 500px) {
   #timingBtn { top: calc(86px + env(safe-area-inset-top)); }
   #buntBtn { top: calc(120px + env(safe-area-inset-top)); }
+  #rotBtn { top: calc(154px + env(safe-area-inset-top)); }
 }
 
 /* 投球練習: 終了ボタン（打者情報の位置） */

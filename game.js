@@ -1017,7 +1017,7 @@
       return v == null ? '' : v;
     };
     const cols = f => Array.from({ length: n }, (_, i) => f(i)).join('');
-    const NAME = { me: '自分', cpu: 'CPU' };
+    const NAME = { me: '自分', cpu: SCHOOLS[selSchool].name };
     const row = side => `<tr><th>${NAME[side]}</th>${cols(i => `<td>${cell(side, i)}</td>`)}<td class="tot">${sum(L[side])}</td></tr>`;
     // 先攻を上の段に
     $('ovLine').innerHTML = `<table><tr><th></th>${cols(i => `<th>${i + 1}</th>`)}<th>計</th></tr>${row(topSide())}${row(bottomSide())}</table>`;
@@ -1133,9 +1133,27 @@
   // =========================================================
   // プレイヤーのミート範囲の内側（ry に対する倍率）。HR_R: ホームランの円の半径, HIT_SQ: ヒットの四角の半分の幅
   const HR_R = 0.32, HIT_SQ = 0.8;
+  // 打撃の四角の向き（a: 長い辺の傾き。+ は右上がり）。R キーか右上のボタンで切り替え、保存しておく
+  const ROTS = [{ a: 0, lbl: '横' }, { a: 45, lbl: '／' }, { a: 90, lbl: '縦' }, { a: -45, lbl: '＼' }];
+  const ROT_KEY = 'homerun-stadium-rot';
+  let rotI = 0;
+  try { const r = +localStorage.getItem(ROT_KEY); if (ROTS[r]) rotI = r; } catch (e) { /* 保存領域が使えなければ横 */ }
+  const batRot = () => ROTS[rotI].a * DEG;
+  function setRot(i) {
+    rotI = (i + ROTS.length) % ROTS.length;
+    try { localStorage.setItem(ROT_KEY, rotI); } catch (e) { /* 保存できなくても続行 */ }
+    $('rotState').textContent = ROTS[rotI].lbl;
+  }
+  // カーソルからのずれ (dx, dy) を、回した四角の向きの座標 (長い辺の方向, 短い辺の方向) に直す
+  const toBox = (dx, dy, a) => { const c = Math.cos(a), s = Math.sin(a); return [dx * c + dy * s, -dx * s + dy * c]; };
+  // 回した四角の4つの角（ゾーン平面上）
+  function boxPts(cx, cy, hw, hh, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c, 0]);
+  }
   // bat: ミートの中心・範囲とパワー（省略時はプレイヤーのカーソル）
-  // rect: ミート範囲を横長の四角にする（プレイヤー）。CPU打者は楕円のまま
-  function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1, rect: true }) {
+  // rect: ミート範囲を四角にする（プレイヤー。rot だけ回す）。CPU打者は楕円のまま
+  function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1, rect: true, rot: batRot() }) {
     if (Math.abs(early) > bat.win) return false;
     const launch = (ev, la, spray) => {
       const L = la * DEG, S = spray * DEG;
@@ -1145,9 +1163,9 @@
     let v0 = null, la = 0, spray = 0, q = 0;
     if (bat.rect) {
       // プレイヤー: ボールが円に触れたらホームラン、内側の四角に触れたらヒットになる打球を選ぶ
-      const dx = cp[0] - bat.x, dy = cp[1] - bat.y;
+      const dx = cp[0] - bat.x, dy = cp[1] - bat.y, [u, v] = toBox(dx, dy, bat.rot);
       const want = Math.hypot(dx, dy) <= bat.ry * HR_R + BALL_R ? 'hr'
-        : Math.max(Math.abs(dx), Math.abs(dy)) <= bat.ry * HIT_SQ + BALL_R ? 'hit' : '';
+        : Math.max(Math.abs(u), Math.abs(v)) <= bat.ry * HIT_SQ + BALL_R ? 'hit' : '';
       if (want) {
         for (let i = 0; i < 40 && !v0; i++) {
           // 引っ張り・流しの向きはタイミングのまま（試すたびに少しずつ中央寄りにして確実にフェアへ）
@@ -1161,13 +1179,17 @@
     }
     if (!v0) {
       const sx = bat.rect ? BALL_R : 0;   // プレイヤーの四角はボールが触れていれば当たる
-      const ex = (cp[0] - bat.x) / (bat.rx + sx), ey = (cp[1] - bat.y) / (bat.ry + sx);
+      const dx = cp[0] - bat.x, dy = cp[1] - bat.y;
+      const [u, v] = bat.rect ? toBox(dx, dy, bat.rot || 0) : [dx, dy];
+      const ex = u / (bat.rx + sx), ey = v / (bat.ry + sx);
       const e = bat.rect ? Math.max(Math.abs(ex), Math.abs(ey)) : Math.hypot(ex, ey);
       if (e > 1) return false;
       const qt = 1 - Math.abs(early) / bat.win;
       q = (1 - Math.pow(e, 1.7)) * (0.5 + 0.5 * Math.pow(qt, 0.6));
       let ev = (19 + 33 * q) * lerp(1, bat.pow, 0.6);
-      la = 13 + ey * 50 + rand(-4, 4);
+      // 打球の角度は四角の向きによらず、ボールとカーソルの上下のずれで決める（縦・斜めで長く伸びた先は大きく上がる・叩きつける）
+      const lift = bat.rect ? clamp(dy / (bat.ry + sx), -1.3, 1.3) : ey;
+      la = 13 + lift * 50 + rand(-4, 4);
       spray = spray0 + rand(-3, 3);
       if (e > 0.82 && Math.random() < 0.6) { // バットの芯を外したファウル
         spray = (Math.random() < 0.5 ? -1 : 1) * rand(95, 165);
@@ -1203,8 +1225,12 @@
   }
   // バントの構え中のボールが打撃面に来たとき。バットに触れていれば転がす
   function tryBunt(cp) {
-    const ex = (cp[0] - cursor.x) / (BUNT.rx + BALL_R), ey = (cp[1] - cursor.y) / (BUNT.ry + BALL_R);
+    // 帯は打撃の四角と同じ向きに回す（ex: バットに沿った位置, ey: バットと直角の方向のずれ）
+    const dx = cp[0] - cursor.x, dy = cp[1] - cursor.y, [u, v] = toBox(dx, dy, batRot());
+    const ex = u / (BUNT.rx + BALL_R), ey = v / (BUNT.ry + BALL_R);
     if (Math.abs(ex) > 1 || Math.abs(ey) > 1) return false;
+    // 転がる向きはバットに沿った左右のずれ、上がり方はバットの芯との上下のずれで決める
+    const side = clamp(dx / (BUNT.rx + BALL_R), -1, 1), lift = clamp(dy / (BUNT.ry + BALL_R), -1.3, 1.3);
     pitch.swung = true;
     let ev, la, spray;
     if (Math.max(Math.abs(ex), Math.abs(ey)) > 0.8 && Math.random() < 0.5) {
@@ -1215,8 +1241,8 @@
     } else {
       // 当てたバットの位置で転がる向きが変わる（一塁側の端なら一塁線へ）。ボールの下を当てると小フライ
       ev = rand(6.5, 10) + Math.abs(ex) * 2;
-      la = clamp(ey * 30 - 10 + rand(-6, 6), -30, 50);
-      spray = ex * 38 + rand(-6, 6);
+      la = clamp(lift * 30 - 10 + rand(-6, 6), -30, 50);
+      spray = side * 38 + rand(-6, 6);
     }
     const L = la * DEG, S = spray * DEG;
     const v0 = [ev * Math.cos(L) * Math.sin(S), ev * Math.sin(L), ev * Math.cos(L) * Math.cos(S)];
@@ -1691,6 +1717,7 @@
     if (sm) { moveStance(sm[0], sm[1]); return; }
     if (e.code === 'KeyT' && mode === 'bat') { setTimingAid(!timingAid); return; }
     if (e.code === 'KeyB' && mode === 'bat') { setBunt(!bunt); return; }
+    if (e.code === 'KeyR' && mode === 'bat') { setRot(rotI + (e.shiftKey ? -1 : 1)); return; }
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
     if (e.code === 'Escape') quitPractice();
@@ -2166,7 +2193,9 @@
       const want = mode === 'bat' && bunt && !(game.state === 'pitch' && pitch && pitch.pulled) ? 1 : 0;
       buntK = lerp(buntK, want, 0.25);
       if (buntK < 0.01) return { h: READY_H, d: READY_D, p: 0 };
-      const BH = [cursor.x - 0.6 - (bX() - BATTER_X), cursor.y, 0.02 - bZ()], BD = norm([1, 0.04, 0.05]);
+      // バットの角度は打撃の四角の向きに合わせる（縦なら立てて、斜めなら傾けて構える）
+      const a = batRot(), BD = norm([Math.cos(a), Math.sin(a) + 0.04, 0.05]);
+      const BH = [cursor.x - BD[0] * 0.6 - (bX() - BATTER_X), cursor.y - BD[1] * 0.6, 0.02 - bZ()];
       return { h: mix(READY_H, BH, buntK), d: norm(mix(READY_D, BD, buntK)), p: 0 };
     }
     const p = (clock() - swingStart) / 300;
@@ -2264,13 +2293,14 @@
   // バントの構え: 横長の帯（寝かせたバット）。引いたら薄くする
   function drawBuntCursor() {
     const pulled = game.state === 'pitch' && pitch && pitch.pulled;
-    const x0 = cursor.x - BUNT.rx, x1 = cursor.x + BUNT.rx, y0 = cursor.y - BUNT.ry, y1 = cursor.y + BUNT.ry;
-    if (polyPath([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]])) {
+    const rot = batRot();
+    if (polyPath(boxPts(cursor.x, cursor.y, BUNT.rx, BUNT.ry, rot))) {
       ctx.fillStyle = pulled ? 'rgba(200,200,220,0.06)' : 'rgba(210,150,255,0.2)'; ctx.fill();
       ctx.strokeStyle = pulled ? 'rgba(200,200,220,0.4)' : 'rgba(225,175,255,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
     }
     // 中央の線 = バット
-    const a = toCam([x0, cursor.y, 0]), b = toCam([x1, cursor.y, 0]);
+    const ux = Math.cos(rot) * BUNT.rx, uy = Math.sin(rot) * BUNT.rx;
+    const a = toCam([cursor.x - ux, cursor.y - uy, 0]), b = toCam([cursor.x + ux, cursor.y + uy, 0]);
     if (a[2] < NEAR || b[2] < NEAR) return;
     const sa = proj(a), sb = proj(b);
     ctx.strokeStyle = pulled ? 'rgba(220,220,230,0.35)' : 'rgba(255,240,255,0.9)'; ctx.lineWidth = 2;
@@ -2280,9 +2310,9 @@
   }
   function drawCursor() {
     if (bunt) { drawBuntCursor(); return; }
-    const x0 = cursor.x - D.rx, x1 = cursor.x + D.rx, y0 = cursor.y - D.ry, y1 = cursor.y + D.ry;
+    const rot = batRot();
     const tg = timingGlow();
-    if (polyPath([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]])) {
+    if (polyPath(boxPts(cursor.x, cursor.y, D.rx, D.ry, rot))) {
       if (tg > 0) {
         // 打ち頃: 枠を緑に光らせる（ジャストに近いほど明るく太く）
         ctx.fillStyle = `rgba(80,255,120,${0.14 + 0.2 * tg})`; ctx.fill();
@@ -2297,7 +2327,7 @@
     }
     // ヒットの四角
     const s = D.ry * HIT_SQ;
-    if (polyPath([[cursor.x - s, cursor.y - s, 0], [cursor.x + s, cursor.y - s, 0], [cursor.x + s, cursor.y + s, 0], [cursor.x - s, cursor.y + s, 0]])) {
+    if (polyPath(boxPts(cursor.x, cursor.y, s, s, rot))) {
       ctx.fillStyle = 'rgba(120,230,255,0.14)'; ctx.fill();
       ctx.strokeStyle = 'rgba(120,230,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
     }
@@ -2310,9 +2340,11 @@
     ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(255,240,150,0.9)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, PI * 2); ctx.stroke();
+    // 照準の線は四角の長い辺の向きに合わせる（画面の y は下向きなので sin を反転）
+    const ux = Math.cos(rot), uy = -Math.sin(rot);
     ctx.beginPath();
-    ctx.moveTo(c[0] - r * 1.8, c[1]); ctx.lineTo(c[0] - r * 0.6, c[1]);
-    ctx.moveTo(c[0] + r * 0.6, c[1]); ctx.lineTo(c[0] + r * 1.8, c[1]);
+    ctx.moveTo(c[0] - ux * r * 1.8, c[1] - uy * r * 1.8); ctx.lineTo(c[0] - ux * r * 0.6, c[1] - uy * r * 0.6);
+    ctx.moveTo(c[0] + ux * r * 0.6, c[1] + uy * r * 0.6); ctx.lineTo(c[0] + ux * r * 1.8, c[1] + uy * r * 1.8);
     ctx.stroke();
   }
 
@@ -2518,7 +2550,11 @@
       : P ? 'マウスで狙う ／ クリックで投球 → 縮むリングが的に重なる瞬間にもう一度クリック ／ 1〜6キーで球種'
       : touch ? '画面をなぞってカーソル移動 ／ ボタンでスイング' : 'マウスでカーソル移動 ／ クリック・スペースでスイング ／ I・J・K・Lで立ち位置';
     $('swingBtn').textContent = P ? '投げる' : 'スイング';
-    $('runsLbl').textContent = vs ? '自分-CPU' : practice ? '球数' : P ? '失点' : '得点';
+    // 試合では対戦校を左上（スコアの上）に出す
+    const lbl = $('runsLbl');
+    if (vs) lbl.innerHTML = `自分 - <b class="vs-name">${SCHOOLS[selSchool].name}</b>`;
+    else lbl.textContent = practice ? '球数' : P ? '失点' : '得点';
+    lbl.classList.toggle('vs-lbl', vs);
   }
   // ピッチャー視点の変化方向（+x は画面左）
   function pitchArrow(n) {
@@ -2616,7 +2652,7 @@
     if (vs) {
       const t = vsTotals();
       const bat = mode === 'bat' ? pickSide() : vsm.saved.bat || SIDE0, pit = mode === 'pitch' ? pickSide() : vsm.saved.pitch || SIDE0;
-      $('ovLbl').textContent = '自分 - CPU';
+      $('ovLbl').textContent = '自分 - ' + SCHOOLS[selSchool].name;
       $('ovRuns').textContent = `${t.me} - ${t.cpu}`;
       $('ovUnit').textContent = '';
       [['安打', bat.hits], ['本塁打', bat.hrs], ['奪三振', pit.ks + 'K']].forEach(([k, v], i) => { $('ovK' + (i + 1)).textContent = k; $('ovV' + (i + 1)).textContent = v; });
@@ -2691,6 +2727,8 @@
   $('timingBtn').addEventListener('click', e => { setTimingAid(!timingAid); e.currentTarget.blur(); });
   setTimingAid(timingAid);
   $('buntBtn').addEventListener('click', e => { setBunt(!bunt); e.currentTarget.blur(); });
+  $('rotBtn').addEventListener('click', e => { setRot(rotI + 1); e.currentTarget.blur(); });
+  setRot(rotI);
   $('resumeBtn').addEventListener('click', () => togglePause(false));
   $('pauseTitleBtn').addEventListener('click', () => {
     togglePause(false);
