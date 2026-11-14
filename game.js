@@ -245,10 +245,13 @@
   // 投球練習: ピッチングモードの一種（打者なし・全球種・スタミナ無限）
   let practice = false;
   const prac = { strikes: 0, perfect: 0, best: 0, miss: 0 };   // miss: 狙いからのズレの合計 (m)
-  // 試合: CPUと対戦（自分が先攻。表はバッティング、裏はピッチング）
+  // 試合: CPUと対戦（first: 'bat' なら自分が先攻＝表に打つ、'pitch' なら後攻＝表に投げる）
   let vs = false;
   // line: イニングごとの得点, saved: 攻守それぞれの成績, skip: 最終回裏なし, walkoff: サヨナラ
-  const vsm = { innings: 3, line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false };
+  const vsm = { innings: 3, first: 'bat', line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false };
+  const isTop = () => mode === vsm.first;                          // いまが表か
+  const sideOf = m => (m === 'bat' ? 'me' : 'cpu');                // その攻守で点を取るのはどちらか
+  const topSide = () => sideOf(vsm.first), bottomSide = () => (topSide() === 'me' ? 'cpu' : 'me');
   const SIDE_KEYS = ['runs', 'hits', 'hrs', 'best', 'ks', 'bb', 'pitches', 'batter'];
   const sum = a => a.reduce((s, v) => s + (v || 0), 0);
   const vsTotals = () => ({ me: sum(vsm.line.me), cpu: sum(vsm.line.cpu) });
@@ -625,7 +628,7 @@
     $(id).innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
   }
   const grade = v => (v >= 1.15 ? 'S' : v >= 1.07 ? 'A' : v >= 1.0 ? 'B' : v >= 0.93 ? 'C' : v >= 0.86 ? 'D' : 'E');
-  const inningLbl = () => game.inning + '回' + (vs ? (mode === 'bat' ? '表' : '裏') : '');
+  const inningLbl = () => game.inning + '回' + (vs ? (isTop() ? '表' : '裏') : '');
   function updateHUD() {
     $('runs').textContent = game.runs;
     dots('ballDots', game.balls, 3);
@@ -689,7 +692,7 @@
     if (last) {
       const t = vs && vsTotals();
       const end = !vs ? mode === 'bat' || game.inning >= INNINGS
-        : mode === 'pitch' ? game.inning >= vsm.innings : game.inning >= vsm.innings && t.cpu > t.me;
+        : !isTop() ? game.inning >= vsm.innings : game.inning >= vsm.innings && t[bottomSide()] > t[topSide()];
       sub = end ? 'ゲームセット' : vs ? 'チェンジ' : `${game.inning + 1}回へ`;
     }
     banner(last ? 'スリーアウト' : `${Math.min(o, 3)}アウト`, sub, good ? 'out-good' : 'out', last ? 2.4 : 1.5);
@@ -995,26 +998,29 @@
   }
   function endHalf() {
     const t = vsTotals();
-    if (mode === 'bat') {
-      // 最終回の表を終えて CPU がリードしていれば裏は行わない
-      if (game.inning >= vsm.innings && t.cpu > t.me) { vsm.skip = true; gameOver(); return; }
-      switchSide('pitch');
+    const other = mode === 'bat' ? 'pitch' : 'bat';
+    if (isTop()) {
+      // 最終回の表を終えて後攻がリードしていれば裏は行わない
+      if (game.inning >= vsm.innings && t[bottomSide()] > t[topSide()]) { vsm.skip = true; gameOver(); return; }
+      switchSide(other);
     } else {
       if (game.inning >= vsm.innings) { gameOver(); return; }
       game.inning++;
-      switchSide('bat');
+      switchSide(other);
     }
   }
   function renderLine() {
     const n = vsm.innings, L = vsm.line;
     const cell = (side, i) => {
       const v = L[side][i];
-      if (side === 'cpu' && i === n - 1) { if (vsm.skip) return 'X'; if (vsm.walkoff) return v + 'x'; }
+      if (side === bottomSide() && i === n - 1) { if (vsm.skip) return 'X'; if (vsm.walkoff) return v + 'x'; }
       return v == null ? '' : v;
     };
     const cols = f => Array.from({ length: n }, (_, i) => f(i)).join('');
-    const row = (side, name) => `<tr><th>${name}</th>${cols(i => `<td>${cell(side, i)}</td>`)}<td class="tot">${sum(L[side])}</td></tr>`;
-    $('ovLine').innerHTML = `<table><tr><th></th>${cols(i => `<th>${i + 1}</th>`)}<th>計</th></tr>${row('me', '自分')}${row('cpu', 'CPU')}</table>`;
+    const NAME = { me: '自分', cpu: 'CPU' };
+    const row = side => `<tr><th>${NAME[side]}</th>${cols(i => `<td>${cell(side, i)}</td>`)}<td class="tot">${sum(L[side])}</td></tr>`;
+    // 先攻を上の段に
+    $('ovLine').innerHTML = `<table><tr><th></th>${cols(i => `<th>${i + 1}</th>`)}<th>計</th></tr>${row(topSide())}${row(bottomSide())}</table>`;
   }
 
   function endPitch() {
@@ -1774,7 +1780,8 @@
         settleRunners();
         updateHUD();
         const t = vs && vsTotals();
-        if (vs && mode === 'pitch' && game.inning >= vsm.innings && t.cpu > t.me) { vsm.walkoff = true; gameOver(); }
+        // 最終回以降の裏に後攻が勝ち越したらサヨナラ
+        if (vs && !isTop() && game.inning >= vsm.innings && t[bottomSide()] > t[topSide()]) { vsm.walkoff = true; gameOver(); }
         else if (vs && game.outs >= 3) endHalf();
         else if (game.outs >= 3 && mode === 'pitch' && game.inning < INNINGS) nextInning();
         else if (game.outs >= 3) gameOver();
@@ -2571,7 +2578,7 @@
   function startGame() {
     ac();
     if (vs) {
-      mode = 'bat';
+      mode = vsm.first;
       Object.assign(vsm, { line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false });
       vsLineup = makeLineup(selSchool);
     }
@@ -2613,7 +2620,7 @@
       $('ovRuns').textContent = `${t.me} - ${t.cpu}`;
       $('ovUnit').textContent = '';
       [['安打', bat.hits], ['本塁打', bat.hrs], ['奪三振', pit.ks + 'K']].forEach(([k, v], i) => { $('ovK' + (i + 1)).textContent = k; $('ovV' + (i + 1)).textContent = v; });
-      note = t.me > t.cpu ? (t.cpu === 0 ? '完封勝利！' : '勝利！') : t.me < t.cpu ? (vsm.walkoff ? 'サヨナラ負け…' : '敗戦…') : '引き分け';
+      note = t.me > t.cpu ? (vsm.walkoff ? 'サヨナラ勝ち！' : t.cpu === 0 ? '完封勝利！' : '勝利！') : t.me < t.cpu ? (vsm.walkoff ? 'サヨナラ負け…' : '敗戦…') : '引き分け';
       note = `vs ${SCHOOLS[selSchool].name}　${note}`;
       renderLine();
     }
@@ -2655,6 +2662,7 @@
   radio('schoolSel', b => { selSchool = b.dataset.school; $('schoolDesc').textContent = SCHOOLS[selSchool].desc; });
   $('schoolDesc').textContent = SCHOOLS[selSchool].desc;
   radio('innSel', b => { vsm.innings = +b.dataset.inn; });
+  radio('firstSel', b => { vsm.first = b.dataset.first; });
   buildPitchButtons();
   if (COARSE) enableTouch();
   applyModeUI();

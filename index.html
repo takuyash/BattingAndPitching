@@ -65,7 +65,13 @@
       <p class="lead bat-only no-vs">3アウトになるまでに何点取れるか挑戦！</p>
       <p class="lead pitch-only match-only">3イニングを投げ抜け！ 変化球を操って失点を抑えよう</p>
       <p class="lead practice-only">ブルペンで投げ込み！ 全球種を好きなだけ試せる</p>
-      <p class="lead vs-only">CPUと対戦！ 表は打って点を取り、裏は投げて抑えよう</p>
+      <div class="vs-only">
+        <div class="sel-lbl">先攻・後攻</div>
+        <div class="diffs" id="firstSel">
+          <button data-first="bat" class="sel">先攻（表に打つ）</button>
+          <button data-first="pitch">後攻（表に投げる）</button>
+        </div>
+      </div>
       <div class="vs-only">
         <div class="sel-lbl">イニング数</div>
         <div class="diffs" id="innSel">
@@ -111,10 +117,10 @@
       </div>
       <button id="startBtn" class="start">プレイボール</button>
       <ul class="howto vs-only">
-        <li>先攻は自分。<b>表はバッティング</b>、<b>裏はピッチング</b>で攻守が交互に入れ替わる</li>
+        <li><b>先攻</b>なら表に打って裏に投げる。<b>後攻</b>なら表に投げて裏に打つ。攻守が交互に入れ替わる</li>
         <li>試合前に、ストレート以外で使う球種を<b>5つ</b>選ぶ</li>
         <li>スタミナは試合を通して持ち越し。イニングが変わると少し回復する</li>
-        <li>最終回の裏にCPUが勝ち越すとサヨナラ負け。同点なら引き分け</li>
+        <li>最終回の裏に後攻が勝ち越すとサヨナラ。同点なら引き分け</li>
         <li>操作はバッティング・ピッチングモードと同じ</li>
       </ul>
       <ul class="howto bat-only no-vs">
