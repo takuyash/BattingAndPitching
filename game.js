@@ -939,11 +939,22 @@
     $('pitchSel').classList.add('lock');
     $('pSpeed').textContent = '';
     resetFielders(true);
-    if (mode === 'bat') rollLefty();
+    const change = mode === 'bat' && newPitcherAt(game.inning);
+    if (change) rollLefty();
     applyModeUI();
     updateHUD();
-    showMsg(inningLbl(), mode === 'bat' ? '攻撃　相手は' + handLbl() : '守備', 'neutral', 1.6);
+    const sub = mode !== 'bat' ? '守備' : change && game.inning > 1 ? '投手交代　' + handLbl() : '攻撃　相手は' + handLbl();
+    showMsg(inningLbl(), sub, 'neutral', 1.6);
     toBetween(1.8);
+  }
+  // 試合の相手投手の交代: 先発はイニング数の半分強（9回→5回、7回→4回、5回→3回）まで投げ、
+  // その後は2イニングずつ継投。3イニング以下の試合は毎回交代
+  const starterInn = n => (n <= 3 ? 1 : Math.round(n * 0.55));
+  function newPitcherAt(inn) {
+    const n = vsm.innings, s = starterInn(n);
+    if (inn <= 1 || n <= 3) return true;
+    if (inn <= s) return false;
+    return (inn - s - 1) % 2 === 0;
   }
   function endHalf() {
     const t = vsTotals();
