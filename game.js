@@ -1078,7 +1078,7 @@
   //  打球
   // =========================================================
   // プレイヤーのミート範囲の内側（ry に対する倍率）。HR_R: ホームランの円の半径, HIT_SQ: ヒットの四角の半分の幅
-  const HR_R = 0.4, HIT_SQ = 0.8;
+  const HR_R = 0.32, HIT_SQ = 0.8;
   // bat: ミートの中心・範囲とパワー（省略時はプレイヤーのカーソル）
   // rect: ミート範囲を横長の四角にする（プレイヤー）。CPU打者は楕円のまま
   function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1, rect: true }) {
