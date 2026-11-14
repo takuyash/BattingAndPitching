@@ -491,6 +491,8 @@
   const sfx = {
     bat(q) { noise({ f: 2400, q: 0.7, dur: 0.18, gain: 0.35 + 0.5 * q }); noise({ f: 900, q: 1.4, dur: 0.09, gain: 0.4 }); tone({ f: 1500, f2: 450, dur: 0.07, gain: 0.15 + 0.25 * q, type: 'triangle' }); },
     swing() { noise({ f: 300, f2: 1600, q: 1.2, dur: 0.22, gain: 0.16, at: 0.08 }); },
+    // バント: 当てるだけの軽く詰まった音
+    bunt() { noise({ f: 1200, q: 1.2, dur: 0.07, gain: 0.35 }); tone({ f: 700, f2: 300, dur: 0.05, gain: 0.12, type: 'triangle' }); },
     mitt() { noise({ type: 'lowpass', f: 700, dur: 0.1, gain: 0.8 }); tone({ f: 160, f2: 70, dur: 0.08, gain: 0.35 }); },
     // 剛速球: 空気を裂く音と重い捕球音
     heat() { noise({ f: 1800, f2: 5000, q: 2, dur: 0.3, gain: 0.22, at: 0.04 }); },
@@ -759,6 +761,8 @@
 
   function swing() {
     if (game.state !== 'pitch' || pitch.swung) return;
+    // バントの構え中は、スイングの操作で「バットを引く」（見送り）
+    if (bunt) { if (!pitch.contact && !pitch.pulled) { pitch.pulled = true; setLive('引いた'); } return; }
     const now = clock();
     pitch.swung = true;
     pitch.swingT = (now - pitch.t0) / 1000;
@@ -923,6 +927,7 @@
     D = diffFor(mode);
     game.outs = game.balls = game.strikes = 0;
     runners = []; pitch = null; play = null; ballPos = null; ballTrail = []; lastCross = null; meter = null;
+    setBunt(false);
     $('pitchInfo').classList.remove('show');
     if (mode === 'pitch' && game.inning > 1) stamina = Math.min(100, stamina + 8);
     startHalf();
@@ -997,6 +1002,7 @@
     }
     updateHUD();
     if (k3) outFx();
+    if (k3 || walk) setBunt(false);
     toBetween(walk ? 2.6 : k3 && game.outs >= 3 ? 2.2 : 1.2);
   }
 
@@ -1126,6 +1132,49 @@
     return true;
   }
 
+  // =========================================================
+  //  バント
+  // =========================================================
+  // 当たる範囲: ストライクゾーンの横幅いっぱい × 高さの 1/3（寝かせたバット）。ボールが触れていれば当たる
+  const BUNT = { rx: (ZONE.x1 - ZONE.x0) / 2, ry: (ZONE.y1 - ZONE.y0) / 6 };
+  let bunt = false, buntK = 0;   // buntK: 構えの見た目の切り替わり具合 (0〜1)
+  const canBunt = () => mode === 'bat' && !practice && (['between', 'windup'].includes(game.state) || (game.state === 'pitch' && !pitch.swung && !pitch.contact));
+  function setBunt(on) {
+    if (on && !canBunt()) return;
+    bunt = on;
+    const b = $('buntBtn');
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    $('buntState').textContent = on ? 'ON' : 'OFF';
+  }
+  // バントの構え中のボールが打撃面に来たとき。バットに触れていれば転がす
+  function tryBunt(cp) {
+    const ex = (cp[0] - cursor.x) / (BUNT.rx + BALL_R), ey = (cp[1] - cursor.y) / (BUNT.ry + BALL_R);
+    if (Math.abs(ex) > 1 || Math.abs(ey) > 1) return false;
+    pitch.swung = true;
+    let ev, la, spray;
+    if (Math.max(Math.abs(ex), Math.abs(ey)) > 0.8 && Math.random() < 0.5) {
+      // バットの端・上下の縁に当たるとファウル
+      spray = (Math.random() < 0.5 ? -1 : 1) * rand(55, 130);
+      la = rand(-10, 45);
+      ev = rand(6, 12);
+    } else {
+      // 当てたバットの位置で転がる向きが変わる（一塁側の端なら一塁線へ）。ボールの下を当てると小フライ
+      ev = rand(6.5, 10) + Math.abs(ex) * 2;
+      la = clamp(ey * 30 - 10 + rand(-6, 6), -30, 50);
+      spray = ex * 38 + rand(-6, 6);
+    }
+    const L = la * DEG, S = spray * DEG;
+    const v0 = [ev * Math.cos(L) * Math.sin(S), ev * Math.sin(L), ev * Math.cos(L) * Math.cos(S)];
+    play = planPlay(cp.slice(), v0, la, S, true);
+    sfx.bunt();
+    flash = 0.2;
+    ballPos = cp.slice();
+    ballTrail = [];
+    game.state = 'hitstop'; game.st = 0;
+    return true;
+  }
+
   // 打球の軌道をあらかじめシミュレート
   function simulate(p0, v0) {
     const dt = 1 / 240, SUBS = 2;
@@ -1220,9 +1269,9 @@
     return runT(1) < thr - 0.15 ? 'hit' : 'out';
   }
 
-  function planPlay(p0, v0, la, spray) {
+  function planPlay(p0, v0, la, spray, isBunt = false) {
     const sim = simulate(p0, v0);
-    const pl = { sim, t: 0, events: [], kind: '', best: null, holder: -1, thr: null, endT: 3, camDir: [Math.sin(spray), Math.cos(spray)], liveEnd: 0, bases: 0, dist: 0, fair: false };
+    const pl = { bunt: isBunt, sim, t: 0, events: [], kind: '', best: null, holder: -1, thr: null, endT: 3, camDir: [Math.sin(spray), Math.cos(spray)], liveEnd: 0, bases: 0, dist: 0, fair: false };
     const ev = (t, fn) => pl.events.push({ t, fn, done: false });
 
     const overFirst = sim.overT >= 0 && (sim.firstT < 0 || sim.overT < sim.firstT);
@@ -1306,8 +1355,10 @@
       const bad = n === 0 && error;
       if (bad) n = 1;
       pl.bases = n;
-      if (!bad && n === 0 && tryDoublePlay(pl, f, best)) return pl;
+      // バントでは併殺を狙わず一塁へ投げる（そのぶん走者は進める＝送りバント）
+      if (!isBunt && !bad && n === 0 && tryDoublePlay(pl, f, best)) return pl;
       pl.kind = bad ? 'error' : n === 0 ? 'groundout' : 'hit';
+      const sac = isBunt && n === 0 && !bad && game.outs < 2 && runners.some(r => !r.out);
       const tb = n === 0 || bad ? BASES[1] : BASES[Math.min(n + 1, 4)];
       const to = bad ? [tb[0] + 4, 0.6, tb[2] - 3] : [tb[0], 1.3, tb[2]];   // 悪送球は一塁手の後ろへ逸れる
       const dur = Math.max(0.3, Math.hypot(to[0] - best.pos[0], to[2] - best.pos[2]) / armV());
@@ -1315,12 +1366,16 @@
       const thrEnd = pl.thr.start + dur;
       ev(best.t, () => {
         catchBall(best.i);
-        if (n > 0 && !bad) showMsg(['', 'ヒット', 'ツーベースヒット', 'スリーベースヒット'][n], la > 8 ? `飛距離 ${Math.round(pl.dist)}m` : '', 'good', 2);
+        if (n > 0 && !bad) showMsg(isBunt ? 'バントヒット' : ['', 'ヒット', 'ツーベースヒット', 'スリーベースヒット'][n], la > 8 && !isBunt ? `飛距離 ${Math.round(pl.dist)}m` : '', 'good', 2);
       });
       ev(thrEnd, () => {
         if (bad) { showMsg('エラー', POS_NAME[f.id] + 'の悪送球', errTone, 2); return; }
-        sfx.glove(); if (n === 0) showMsg('アウト', POS_NAME[f.id] + 'ゴロ', 'bad');
+        sfx.glove();
+        if (sac) showMsg('送りバント成功', '走者が進塁', 'neutral', 1.8);
+        else if (n === 0) showMsg('アウト', POS_NAME[f.id] + 'ゴロ', 'bad');
       });
+      // 送りバント: 走者はそれぞれ1つ先の塁へ
+      if (sac) for (const r of runners) if (!r.out) { r.target = Math.min(4, Math.round(r.b) + 1); r.speed = 0.27; r.delay = 0.2; }
       pl.liveEnd = la > 8 ? sim.firstT : 0;
       pl.endT = Math.max(thrEnd + 0.9, Math.min(runT(Math.max(n, 1)) + 0.3, thrEnd + 2.6));
       if (n === 0) runners.push({ b: 0, target: 1, speed: 0.27, delay: 0.5, out: true, batter: true, spd: batterSpd() });
@@ -1420,7 +1475,12 @@
 
   function finishPlay() {
     const k = play.kind;
-    if (k === 'foul') {
+    // 2ストライクからのバントのファウルは三振（スリーバント失敗）
+    const k3 = k === 'foul' && play.bunt && game.strikes >= 2;
+    if (k3) {
+      game.outs++; game.ks++; game.batter++; game.balls = game.strikes = 0;
+      showMsg('スリーバント失敗', '三振', 'bad');
+    } else if (k === 'foul') {
       if (game.strikes < 2) game.strikes++;
     } else {
       game.balls = game.strikes = 0;
@@ -1436,8 +1496,10 @@
     settleRunners();
     setLive('');
     updateHUD();
-    const out = k === 'flyout' || k === 'groundout' || k === 'dp';
+    const out = k3 || k === 'flyout' || k === 'groundout' || k === 'dp';
     if (out) outFx();
+    // 打席が終わったらバントの構えを解く（ファウルなら同じ打席なので続ける）
+    if (k !== 'foul' || k3) setBunt(false);
     toBetween(out && game.outs >= 3 ? 2.6 : 1.9);
   }
   function settleRunners() {
@@ -1573,6 +1635,7 @@
     const sm = { KeyI: [0, 0.05], KeyK: [0, -0.05], KeyJ: [-0.05, 0], KeyL: [0.05, 0], KeyO: [0, 0] }[e.code];
     if (sm) { moveStance(sm[0], sm[1]); return; }
     if (e.code === 'KeyT' && mode === 'bat') { setTimingAid(!timingAid); return; }
+    if (e.code === 'KeyB' && mode === 'bat') { setBunt(!bunt); return; }
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
     if (e.code === 'Escape') quitPractice();
@@ -1613,6 +1676,7 @@
       if (mode === 'bat' && !pitch.contact && s >= hitS()) {
         pitch.contact = pitchPos(pitch, hitS());
         if (pitch.swung && tryHit(pitch.contact, hitEarly())) return;
+        if (bunt && !pitch.pulled && !pitch.swung && tryBunt(pitch.contact)) return;
       }
       if (!pitch.crossed && s >= 1) {
         pitch.crossed = true;
@@ -2041,7 +2105,14 @@
   // バットの姿勢
   function batPose() {
     const READY_H = [-0.72, 1.3, -0.22], READY_D = norm([0.25, 0.85, -0.45]);
-    if (swingStart < 0) return { h: READY_H, d: READY_D, p: 0 };
+    if (swingStart < 0) {
+      // バントの構え: バットを寝かせて、芯がカーソルの位置に来るように前へ出す（姿勢は標準位置基準）
+      const want = mode === 'bat' && bunt && !(game.state === 'pitch' && pitch && pitch.pulled) ? 1 : 0;
+      buntK = lerp(buntK, want, 0.25);
+      if (buntK < 0.01) return { h: READY_H, d: READY_D, p: 0 };
+      const BH = [cursor.x - 0.6 - (bX() - BATTER_X), cursor.y, 0.02 - bZ()], BD = norm([1, 0.04, 0.05]);
+      return { h: mix(READY_H, BH, buntK), d: norm(mix(READY_D, BD, buntK)), p: 0 };
+    }
     const p = (clock() - swingStart) / 300;
     const cy = clamp(swingCY, 0.3, 1.4);
     const CONTACT_H = [-0.52, cy + 0.03, 0.02];
@@ -2134,7 +2205,25 @@
     const k = Math.abs(early) / D.win;
     return k > 1 ? 0 : 1 - k * k;
   }
+  // バントの構え: 横長の帯（寝かせたバット）。引いたら薄くする
+  function drawBuntCursor() {
+    const pulled = game.state === 'pitch' && pitch && pitch.pulled;
+    const x0 = cursor.x - BUNT.rx, x1 = cursor.x + BUNT.rx, y0 = cursor.y - BUNT.ry, y1 = cursor.y + BUNT.ry;
+    if (polyPath([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]])) {
+      ctx.fillStyle = pulled ? 'rgba(200,200,220,0.06)' : 'rgba(210,150,255,0.2)'; ctx.fill();
+      ctx.strokeStyle = pulled ? 'rgba(200,200,220,0.4)' : 'rgba(225,175,255,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
+    }
+    // 中央の線 = バット
+    const a = toCam([x0, cursor.y, 0]), b = toCam([x1, cursor.y, 0]);
+    if (a[2] < NEAR || b[2] < NEAR) return;
+    const sa = proj(a), sb = proj(b);
+    ctx.strokeStyle = pulled ? 'rgba(220,220,230,0.35)' : 'rgba(255,240,255,0.9)'; ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.moveTo(sa[0], sa[1]); ctx.lineTo(sb[0], sb[1]); ctx.stroke();
+    ctx.setLineDash([]);
+  }
   function drawCursor() {
+    if (bunt) { drawBuntCursor(); return; }
     const x0 = cursor.x - D.rx, x1 = cursor.x + D.rx, y0 = cursor.y - D.ry, y1 = cursor.y + D.ry;
     const tg = timingGlow();
     if (polyPath([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]])) {
@@ -2354,6 +2443,7 @@
     $('pitchInfo').classList.remove('show');
     batterVisible = !practice; swingStart = -1;
     stamina = 100; meter = null;
+    setBunt(false); buntK = 0;
     Object.assign(prac, { strikes: 0, perfect: 0, best: 0, miss: 0 });
     cpuMem.kmh = 146; cpuMem.last = '';
     $('pitchSel').classList.add('lock');
@@ -2535,6 +2625,7 @@
   // フォーカスを残すとスペースキー（スイング）でボタンまで押されてしまうので外す
   $('timingBtn').addEventListener('click', e => { setTimingAid(!timingAid); e.currentTarget.blur(); });
   setTimingAid(timingAid);
+  $('buntBtn').addEventListener('click', e => { setBunt(!bunt); e.currentTarget.blur(); });
   $('resumeBtn').addEventListener('click', () => togglePause(false));
   $('pauseTitleBtn').addEventListener('click', () => {
     togglePause(false);
