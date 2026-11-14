@@ -954,26 +954,53 @@
   // =========================================================
   //  打球
   // =========================================================
+  // プレイヤーのミート範囲の内側（ry に対する倍率）。HR_R: ホームランの円の半径, HIT_SQ: ヒットの四角の半分の幅
+  const HR_R = 0.5, HIT_SQ = 0.8;
   // bat: ミートの中心・範囲とパワー（省略時はプレイヤーのカーソル）
   // rect: ミート範囲を横長の四角にする（プレイヤー）。CPU打者は楕円のまま
   function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1, rect: true }) {
-    const ex = (cp[0] - bat.x) / bat.rx, ey = (cp[1] - bat.y) / bat.ry;
-    const e = bat.rect ? Math.max(Math.abs(ex), Math.abs(ey)) : Math.hypot(ex, ey);
-    if (e > 1 || Math.abs(early) > bat.win) return false;
-    const qt = 1 - Math.abs(early) / bat.win;
-    const q = (1 - Math.pow(e, 1.7)) * (0.5 + 0.5 * Math.pow(qt, 0.6));
-    let ev = (19 + 33 * q) * lerp(1, bat.pow, 0.6);
-    let la = 13 + ey * 50 + rand(-4, 4);
-    let spray = -(early / bat.win) * 52 + rand(-3, 3);
-    if (e > 0.82 && Math.random() < 0.6) { // バットの芯を外したファウル
-      spray = (Math.random() < 0.5 ? -1 : 1) * rand(95, 165);
-      la = rand(15, 65);
-      ev = rand(16, 26);
+    if (Math.abs(early) > bat.win) return false;
+    const launch = (ev, la, spray) => {
+      const L = la * DEG, S = spray * DEG;
+      return [ev * Math.cos(L) * Math.sin(S), ev * Math.sin(L), ev * Math.cos(L) * Math.cos(S)];
+    };
+    const spray0 = -(early / bat.win) * 52;
+    let v0 = null, la = 0, spray = 0, q = 0;
+    if (bat.rect) {
+      // プレイヤー: ボールが円に触れたらホームラン、内側の四角に触れたらヒットになる打球を選ぶ
+      const dx = cp[0] - bat.x, dy = cp[1] - bat.y;
+      const want = Math.hypot(dx, dy) <= bat.ry * HR_R + BALL_R ? 'hr'
+        : Math.max(Math.abs(dx), Math.abs(dy)) <= bat.ry * HIT_SQ + BALL_R ? 'hit' : '';
+      if (want) {
+        for (let i = 0; i < 40 && !v0; i++) {
+          // 引っ張り・流しの向きはタイミングのまま（試すたびに少しずつ中央寄りにして確実にフェアへ）
+          const sp = clamp(spray0 * (1 - i / 50), -38, 38) + rand(-6, 6);
+          const l = want === 'hr' ? rand(22, 34) : rand(-4, 20) + i * 0.1;
+          const e = want === 'hr' ? rand(47, 56) + i * 0.2 : rand(32, 44);
+          const v = launch(e, l, sp);
+          if (predictPlay(simulate(cp, v)) === want) { v0 = v; la = l; spray = sp; q = want === 'hr' ? 1 : 0.8; }
+        }
+      }
     }
-    la = clamp(la, -40, 75);
-    const L = la * DEG, S = spray * DEG;
-    const v0 = [ev * Math.cos(L) * Math.sin(S), ev * Math.sin(L), ev * Math.cos(L) * Math.cos(S)];
-    play = planPlay(cp.slice(), v0, la, S);
+    if (!v0) {
+      const sx = bat.rect ? BALL_R : 0;   // プレイヤーの四角はボールが触れていれば当たる
+      const ex = (cp[0] - bat.x) / (bat.rx + sx), ey = (cp[1] - bat.y) / (bat.ry + sx);
+      const e = bat.rect ? Math.max(Math.abs(ex), Math.abs(ey)) : Math.hypot(ex, ey);
+      if (e > 1) return false;
+      const qt = 1 - Math.abs(early) / bat.win;
+      q = (1 - Math.pow(e, 1.7)) * (0.5 + 0.5 * Math.pow(qt, 0.6));
+      let ev = (19 + 33 * q) * lerp(1, bat.pow, 0.6);
+      la = 13 + ey * 50 + rand(-4, 4);
+      spray = spray0 + rand(-3, 3);
+      if (e > 0.82 && Math.random() < 0.6) { // バットの芯を外したファウル
+        spray = (Math.random() < 0.5 ? -1 : 1) * rand(95, 165);
+        la = rand(15, 65);
+        ev = rand(16, 26);
+      }
+      la = clamp(la, -40, 75);
+      v0 = launch(ev, la, spray);
+    }
+    play = planPlay(cp.slice(), v0, la, spray * DEG);
     sfx.bat(q);
     flash = 0.6 + q * 0.4;
     ballPos = cp.slice();
@@ -1045,19 +1072,8 @@
   const batterSpd = () => (mode === 'pitch' ? lineup()[game.batter % lineup().length].spd * (D.spd || 1) : 1);
   const runT = n => 0.5 + n * 3.7 / batterSpd();   // 打者走者が n 塁に到達する時刻
 
-  function planPlay(p0, v0, la, spray) {
-    const sim = simulate(p0, v0);
-    const pl = { sim, t: 0, events: [], kind: '', best: null, holder: -1, thr: null, endT: 3, camDir: [Math.sin(spray), Math.cos(spray)], liveEnd: 0, bases: 0, dist: 0, fair: false };
-    const ev = (t, fn) => pl.events.push({ t, fn, done: false });
-
-    const overFirst = sim.overT >= 0 && (sim.firstT < 0 || sim.overT < sim.firstT);
-    let fair, decT;
-    if (overFirst) { fair = sim.overFair; decT = sim.overT; }
-    else if (sim.firstT >= 0) { fair = Math.abs(Math.atan2(sim.firstPos[0], sim.firstPos[2])) <= FAIR; decT = sim.firstT; }
-    else { fair = false; decT = 1; }
-    pl.fair = fair;
-
-    // 野手の捕球判定
+  // 打球にいちばん早く追いつける野手（捕球位置・時刻）。誰も追いつけなければ null
+  function findCatch(sim, fair) {
     let best = null;
     fielders.forEach((f, i) => {
       const airOnly = !fair || f.air;
@@ -1073,6 +1089,34 @@
         if (d <= spd * (t - re)) { if (!best || t < best.t) best = { i, t, pos: b.slice() }; break; }
       }
     });
+    return best;
+  }
+  // 打球の結果を先読みする（エラーは含めない）: 'hr' | 'hit' | 'out' | 'foul'
+  function predictPlay(sim) {
+    const overFirst = sim.overT >= 0 && (sim.firstT < 0 || sim.overT < sim.firstT);
+    if (overFirst) return sim.overFair ? 'hr' : 'foul';
+    if (sim.firstT < 0 || Math.abs(Math.atan2(sim.firstPos[0], sim.firstPos[2])) > FAIR) return 'foul';
+    const best = findCatch(sim, true);
+    if (sim.overT >= 0) return best && best.t < sim.firstT ? 'out' : 'hit';   // エンタイトルツーベース
+    if (!best || best.t < sim.firstT) return 'out';
+    const thr = best.t + holdT(0.65) + Math.hypot(BASES[1][0] - best.pos[0], BASES[1][2] - best.pos[2]) / armV();
+    return runT(1) < thr - 0.15 ? 'hit' : 'out';
+  }
+
+  function planPlay(p0, v0, la, spray) {
+    const sim = simulate(p0, v0);
+    const pl = { sim, t: 0, events: [], kind: '', best: null, holder: -1, thr: null, endT: 3, camDir: [Math.sin(spray), Math.cos(spray)], liveEnd: 0, bases: 0, dist: 0, fair: false };
+    const ev = (t, fn) => pl.events.push({ t, fn, done: false });
+
+    const overFirst = sim.overT >= 0 && (sim.firstT < 0 || sim.overT < sim.firstT);
+    let fair, decT;
+    if (overFirst) { fair = sim.overFair; decT = sim.overT; }
+    else if (sim.firstT >= 0) { fair = Math.abs(Math.atan2(sim.firstPos[0], sim.firstPos[2])) <= FAIR; decT = sim.firstT; }
+    else { fair = false; decT = 1; }
+    pl.fair = fair;
+
+    // 野手の捕球判定
+    let best = findCatch(sim, fair);
     if (!best && fair && !overFirst && sim.overT < 0) {
       // 念のため: 誰も間に合わない場合は最後に止まった位置へ一番近い野手
       const last = sim.S[sim.S.length - 1];
@@ -1962,10 +2006,19 @@
       ctx.fillStyle = 'rgba(255,216,40,0.16)'; ctx.fill();
       ctx.strokeStyle = 'rgba(255,216,40,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
     }
+    // ヒットの四角
+    const s = D.ry * HIT_SQ;
+    if (polyPath([[cursor.x - s, cursor.y - s, 0], [cursor.x + s, cursor.y - s, 0], [cursor.x + s, cursor.y + s, 0], [cursor.x - s, cursor.y + s, 0]])) {
+      ctx.fillStyle = 'rgba(120,230,255,0.14)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(120,230,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+    }
     const cc = toCam([cursor.x, cursor.y, 0]);
     if (cc[2] < NEAR) return;
     const c = proj(cc);
-    const r = cam.f * D.ry * 0.5 / cc[2];
+    // ホームランの円
+    const r = cam.f * D.ry * HR_R / cc[2];
+    ctx.fillStyle = 'rgba(255,120,80,0.2)';
+    ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(255,240,150,0.9)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, PI * 2); ctx.stroke();
     ctx.beginPath();
