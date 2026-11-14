@@ -706,6 +706,18 @@
   // 打撃面: 前に立つほど早く（変化しきる前に）、後ろに立つほど遅く（ボールを長く見て）打つ
   const hitS = () => 1 - bZ() / REL[2];
   const hitEarly = () => pitch.T * hitS() - (pitch.swingT + HIT_LEAD);
+  // タイミングガイド（打ち頃に打撃の枠が光る）のオン・オフ。保存しておく
+  const TIMING_KEY = 'homerun-stadium-timing';
+  let timingAid = true;
+  try { timingAid = localStorage.getItem(TIMING_KEY) !== 'off'; } catch (e) { /* 保存領域が使えなければオン */ }
+  function setTimingAid(on) {
+    timingAid = on;
+    try { localStorage.setItem(TIMING_KEY, on ? 'on' : 'off'); } catch (e) { /* 保存できなくても続行 */ }
+    const b = $('timingBtn');
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    $('timingState').textContent = on ? 'ON' : 'OFF';
+  }
   function moveStance(dx, dz) {
     if (!myStance() || !['between', 'windup'].includes(game.state)) return;
     stance.x = clamp(Math.round((stance.x + dx) * 100) / 100, -STANCE_X, STANCE_X);
@@ -1447,6 +1459,7 @@
     if (paused) return;
     const sm = { KeyI: [0, 0.05], KeyK: [0, -0.05], KeyJ: [-0.05, 0], KeyL: [0.05, 0], KeyO: [0, 0] }[e.code];
     if (sm) { moveStance(sm[0], sm[1]); return; }
+    if (e.code === 'KeyT' && mode === 'bat') { setTimingAid(!timingAid); return; }
     keys[e.code] = true;
     if (e.code === 'Space') { e.preventDefault(); action(); }
     if (e.code === 'Escape') quitPractice();
@@ -2000,11 +2013,28 @@
       if (polyPath(pts)) { ctx.strokeStyle = lastCross.strike ? '#ffd84a' : '#5fe07a'; ctx.lineWidth = 2.5; ctx.stroke(); }
     }
   }
+  // タイミングガイド: 今スイングすれば当たるタイミングなら 0〜1（1 がジャスト）、それ以外は 0
+  function timingGlow() {
+    if (!timingAid || game.state !== 'pitch' || !pitch || pitch.swung) return 0;
+    const early = pitch.T * hitS() - ((clock() - pitch.t0) / 1000 + HIT_LEAD);
+    const k = Math.abs(early) / D.win;
+    return k > 1 ? 0 : 1 - k * k;
+  }
   function drawCursor() {
     const x0 = cursor.x - D.rx, x1 = cursor.x + D.rx, y0 = cursor.y - D.ry, y1 = cursor.y + D.ry;
+    const tg = timingGlow();
     if (polyPath([[x0, y0, 0], [x1, y0, 0], [x1, y1, 0], [x0, y1, 0]])) {
-      ctx.fillStyle = 'rgba(255,216,40,0.16)'; ctx.fill();
-      ctx.strokeStyle = 'rgba(255,216,40,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
+      if (tg > 0) {
+        // 打ち頃: 枠を緑に光らせる（ジャストに近いほど明るく太く）
+        ctx.fillStyle = `rgba(80,255,120,${0.14 + 0.2 * tg})`; ctx.fill();
+        ctx.strokeStyle = `rgba(90,255,130,${0.75 + 0.25 * tg})`; ctx.lineWidth = 3 + 3 * tg;
+        ctx.shadowColor = 'rgba(80,255,120,0.9)'; ctx.shadowBlur = 8 + 12 * tg;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.fillStyle = 'rgba(255,216,40,0.16)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,216,40,0.95)'; ctx.lineWidth = 2.5; ctx.stroke();
+      }
     }
     // ヒットの四角
     const s = D.ry * HIT_SQ;
@@ -2388,6 +2418,9 @@
     $('pause').classList.toggle('hidden', !on);
   }
   $('pauseBtn').addEventListener('click', () => togglePause(true));
+  // フォーカスを残すとスペースキー（スイング）でボタンまで押されてしまうので外す
+  $('timingBtn').addEventListener('click', e => { setTimingAid(!timingAid); e.currentTarget.blur(); });
+  setTimingAid(timingAid);
   $('resumeBtn').addEventListener('click', () => togglePause(false));
   $('pauseTitleBtn').addEventListener('click', () => {
     togglePause(false);

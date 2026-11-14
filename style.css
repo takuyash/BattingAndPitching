@@ -195,6 +195,33 @@ body.touch #stance { bottom: calc(130px + env(safe-area-inset-bottom)); }
   #pauseBtn { top: calc(8px + env(safe-area-inset-top)); width: 36px; height: 36px; }
 }
 
+/* バッティング: タイミングガイドのオン・オフ（右上、球速表示の下） */
+#timingBtn {
+  position: absolute;
+  right: calc(14px + env(safe-area-inset-right));
+  top: calc(96px + env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #cfd8e6;
+  background: rgba(10, 20, 35, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#timingBtn b { min-width: 28px; padding: 1px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.15); color: #9aa6b8; }
+#timingBtn.on b { background: #4fe07a; color: #10203a; }
+#timingBtn small { font-weight: 400; opacity: 0.6; }
+@media (max-height: 500px) {
+  #timingBtn { top: calc(86px + env(safe-area-inset-top)); }
+}
+
 /* 投球練習: 終了ボタン（打者情報の位置） */
 #quitBtn {
   position: absolute;
