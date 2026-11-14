@@ -134,6 +134,9 @@
     king:   { name: '絶対王者',   desc: '全国制覇の最強校。投打走すべてが一枚上',
               bat: { ...DIFFS.hard, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92 },
               def: { field: 1.1, react: 0.82, arm: 1.15, hold: 0.82, err: 0.005 } },
+    pro:    { name: 'プロ',       desc: 'プロ野球チーム。打線は全員S以上、主軸はSS。170km/h超えの剛速球と鋭い変化球、鉄壁の守備',
+              bat: { ...DIFFS.hard, brk: 1.55, types: ALL_TYPES }, pit: { rx: 0.16, ry: 0.12, win: 0.11, read: 0.8, adapt: 0.92, field: 0.9 },
+              def: { field: 1.16, react: 0.75, arm: 1.25, hold: 0.75, err: 0.002 } },
   };
   let selSchool = 'mid';
   // 現在のモードで使う難易度（試合モードは対戦校から）
@@ -149,6 +152,7 @@
     strong: { vmin: 138, vmax: 155 },
     ace:    { vmin: 148, vmax: 163 },
     king:   { vmin: 155, vmax: 170 },
+    pro:    { vmin: 152, vmax: 174 },
   };
   // 試合モードの相手打線は、打者ごとの能力（VS_LINEUP で作る ミート・パワー・走力）で強さを出すので、
   // チーム全体のバットの当たり範囲・パワー・走力の倍率は標準にそろえる（二重にかからないように）
@@ -172,7 +176,7 @@
   ];
   // 試合モードの対戦校ごとの打線。試合開始時に作る
   //   lv: チームの基本能力, lo/hi: 能力の下限・上限, add: チーム特有の上乗せ
-  //   ランクの目安は grade(): S ≥1.15, A ≥1.07, B ≥1.0, C ≥0.93, D ≥0.86, E それ未満
+  //   ランクの目安は grade(): SS ≥1.26, S ≥1.15, A ≥1.07, B ≥1.0, C ≥0.93, D ≥0.86, E それ未満
   const VS_LINEUP = {
     weak:   { lv: 0.88, lo: 0.74, hi: 1.06 },                          // 最高でも B
     slug:   { lv: 0.99, lo: 0.82, hi: 1.22, add: { pow: 0.09 } },     // 長打力。クリーンナップは S も
@@ -181,6 +185,7 @@
     speed:  { lv: 1.0,  lo: 0.84, hi: 1.2,  add: { spd: 0.1, pow: -0.04 } },
     strong: { lv: 1.04, lo: 0.88, hi: 1.14 },                          // A が多め（S はなし）
     king:   { lv: 1.11, lo: 1.07, hi: 1.26 },                          // ほぼ A、クリーンナップは S
+    pro:    { lv: 1.21, lo: 1.15, hi: 1.36 },                          // 全員 S 以上、クリーンナップは SS
   };
   // 打順ごとの役割（1・2番: 俊足巧打、3〜5番: クリーンナップ、下位打線は控えめ）
   const ORDER_ROLE = [
@@ -627,7 +632,7 @@
   function dots(id, n, max) {
     $(id).innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
   }
-  const grade = v => (v >= 1.15 ? 'S' : v >= 1.07 ? 'A' : v >= 1.0 ? 'B' : v >= 0.93 ? 'C' : v >= 0.86 ? 'D' : 'E');
+  const grade = v => (v >= 1.26 ? 'SS' : v >= 1.15 ? 'S' : v >= 1.07 ? 'A' : v >= 1.0 ? 'B' : v >= 0.93 ? 'C' : v >= 0.86 ? 'D' : 'E');
   const inningLbl = () => game.inning + '回' + (vs ? (isTop() ? '表' : '裏') : '');
   function updateHUD() {
     $('runs').textContent = game.runs;
