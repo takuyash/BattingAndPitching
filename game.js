@@ -551,7 +551,17 @@
     under: { name: 'アンダースロー', rel: [-0.55, 0.55], sp: 0.9,  bx: 1.15, by: 0.65, rate: 0.13 },
   };
   let oppArm = 'over';
-  const armStyle = () => ARM_STYLES[mode === 'bat' ? oppArm : 'over'];
+  // 自分が投げるときのフォーム（タイトルで選び、保存しておく）
+  const ARM_KEY = 'homerun-stadium-arm';
+  const ARM_DESC = {
+    over:  '標準のフォーム。球速が出て、縦の変化が大きい',
+    side:  '横から投げる。横の変化が大きくなるが、縦の変化と球速は少し落ちる',
+    under: '下から浮き上がる軌道。球速は落ちるが、低いリリースから横に曲がる球で打者を惑わせる',
+  };
+  let myArm = 'over';
+  try { const a = localStorage.getItem(ARM_KEY); if (ARM_STYLES[a]) myArm = a; } catch (e) { /* 保存領域が使えなければオーバー */ }
+  const armKey = () => (mode === 'bat' ? oppArm : myArm);
+  const armStyle = () => ARM_STYLES[armKey()];
   // 左右・投げ方が変わったら true を返す
   const rollLefty = () => {
     const was = (oppLefty ? 'L' : 'R') + oppArm;
@@ -817,14 +827,14 @@
     document.querySelectorAll('#pitchBtns button').forEach(b => b.classList.toggle('sel', b.dataset.p === name));
   }
   function idealPitch(name) {
-    const def = PITCHES[name];
-    return buildPitch(name, P_VMAX * def.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK, def.by * P_BRK, 0], P_BEND, (def.drop || 0) * dropK(def.drop));
+    const def = PITCHES[name], A = armStyle();
+    return buildPitch(name, P_VMAX * def.sp * A.sp, [cursor.x, cursor.y, 0], [def.bx * P_BRK * A.bx, def.by * P_BRK * A.by, 0], P_BEND, (def.drop || 0) * dropK(def.drop));
   }
   function makePlayerPitch() {
-    const def = PITCHES[selPitch], acc = meter.acc, sta = stamina / 100;
+    const def = PITCHES[selPitch], acc = meter.acc, sta = stamina / 100, A = armStyle();
     const sd = (0.025 + (1 - acc) * 0.17 + (1 - sta) * 0.06) * (def.ctl || 1);
     const tgt = [cursor.x + gauss() * sd, cursor.y + gauss() * sd, 0];
-    const kmh = P_VMAX * def.sp * (0.94 + 0.06 * acc) * (0.92 + 0.08 * sta) * rand(0.985, 1.01);
+    const kmh = P_VMAX * def.sp * A.sp * (0.94 + 0.06 * acc) * (0.92 + 0.08 * sta) * rand(0.985, 1.01);
     if (def.knuckle) {
       // ナックルは投げた本人にも行き先が読めない
       const brk = [rand(-0.18, 0.18), rand(-0.25, 0.05), 0];
@@ -838,7 +848,7 @@
       const want = [def.bx * P_BRK, def.by * P_BRK, 0];
       return buildPitch(selPitch, kmh, add(tgt, sub(brk, want)), brk, MOVING_BEND);
     }
-    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * rand(0.9, 1.1), def.by * P_BRK * rand(0.9, 1.1), 0], P_BEND, (def.drop || 0) * dropK(def.drop) * rand(0.9, 1.1));
+    return buildPitch(selPitch, kmh, tgt, [def.bx * P_BRK * A.bx * rand(0.9, 1.1), def.by * P_BRK * A.by * rand(0.9, 1.1), 0], P_BEND, (def.drop || 0) * dropK(def.drop) * rand(0.9, 1.1));
   }
 
   // CPU打者: 見えたコースと予想タイミングからスイングを決める
@@ -2405,7 +2415,7 @@
     crew.forEach((f, i) => {
       let J, alpha = 1, glove = true, mitt = false, ovW = null, ball = false;
       if (i === 0 && (st === 'aim' || st === 'windup' || st === 'pitch' || st === 'hbp' || st === 'hitstop' || (st === 'play' && play.t < reactT(f)))) {
-        const arm = mode === 'bat' ? oppArm : 'over';
+        const arm = armKey();
         J = st === 'aim' ? pitcherJoints('set')
           : st === 'windup' ? pitcherJoints(game.st < 0.25 ? 'set' : 'wind', clamp((game.st - 0.25) / (WINDUP - 0.25), 0, 1), arm) : pitcherJoints('follow', 0, arm);
         ball = st === 'windup' || st === 'aim';
@@ -2505,7 +2515,8 @@
   }
   // ピッチャー視点の変化方向（+x は画面左）
   function pitchArrow(n) {
-    const d = PITCHES[n], by = d.by + (d.drop || 0), bx = myLefty ? -d.bx : d.bx;
+    const d = PITCHES[n], A = ARM_STYLES[myArm];
+    const by = d.by * A.by + (d.drop || 0), bx = (myLefty ? -d.bx : d.bx) * A.bx;
     return d.knuckle ? '?' : d.arc ? '⌒' : Math.hypot(bx, by) < 0.15 ? '●'
       : `<span class="arw" style="transform:rotate(${Math.round(Math.atan2(-by, -bx) / DEG)}deg)">→</span>`;
   }
@@ -2525,7 +2536,7 @@
     $('arsList').innerHTML = P_TYPES.filter(n => P_DESC[n]).map(n => {
       const on = picking.includes(n);
       return `<button class="ars${on ? ' sel' : ''}${full && !on ? ' off' : ''}" data-p="${n}">
-        <span class="ars-head">${pitchArrow(n)}<b>${n}</b><em>${Math.round(P_VMAX * PITCHES[n].sp * 0.975)}km/h</em></span>
+        <span class="ars-head">${pitchArrow(n)}<b>${n}</b><em>${Math.round(P_VMAX * PITCHES[n].sp * ARM_STYLES[myArm].sp * 0.975)}km/h</em></span>
         <small>${(myLefty && P_DESC_L[n]) || P_DESC[n]}</small></button>`;
     }).join('');
     $('arsCount').textContent = `${picking.length} / ${ARSENAL_SIZE}`;
@@ -2633,6 +2644,13 @@
   radio('handSel', b => {
     myLefty = b.dataset.hand === 'L';
     try { localStorage.setItem(HAND_KEY, myLefty ? 'L' : 'R'); } catch (e) { /* 保存できなくても続行 */ }
+  });
+  document.querySelectorAll('#armSel button').forEach(b => b.classList.toggle('sel', b.dataset.arm === myArm));
+  $('armDesc').textContent = ARM_DESC[myArm];
+  radio('armSel', b => {
+    myArm = b.dataset.arm;
+    $('armDesc').textContent = ARM_DESC[myArm];
+    try { localStorage.setItem(ARM_KEY, myArm); } catch (e) { /* 保存できなくても続行 */ }
   });
   radio('schoolSel', b => { selSchool = b.dataset.school; $('schoolDesc').textContent = SCHOOLS[selSchool].desc; });
   $('schoolDesc').textContent = SCHOOLS[selSchool].desc;
