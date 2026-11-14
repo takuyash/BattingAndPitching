@@ -706,7 +706,7 @@
     const kmh = rand(D.vmin, D.vmax) * def.sp * A.sp;
     let tx, ty;
     if (Math.random() < 0.6) { tx = rand(-0.2, 0.2); ty = rand(0.52, 1.04); }
-    else if (Math.random() < 0.04) { tx = rand(-0.9, -0.76); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
+    else if (Math.random() < 0.04) { tx = rand(-1.0, -0.82); ty = rand(0.5, 1.4); }   // すっぽ抜けて打者の体へ
     else { do { tx = rand(-0.5, 0.5); ty = rand(0.25, 1.35); } while (inZone(tx, ty)); }
     if (def.moving) return buildPitch(name, kmh, [tx, ty, 0], movingBrk(def.by, D.brk), MOVING_BEND);
     const brk = [def.bx * A.bx * D.brk * rand(0.8, 1.15), def.by * A.by * D.brk * rand(0.8, 1.15), 0];
@@ -747,6 +747,7 @@
   function releasePitch(now, p) {
     pitch = p || makePitch();
     pitch.t0 = now;
+    pitch.hbpS = hbpS(pitch);
     ballPos = pitch.rel.slice();
     ballTrail = [];
     game.state = 'pitch'; game.st = 0;
@@ -861,7 +862,7 @@
     const Tavg = REL[2] / (cpuMem.kmh / 3.6);
     const Texp = lerp(Tavg, p.T, clamp(D.adapt * b.con, 0, 0.95)) + gauss() * (0.018 + Math.max(0, p.kmh - 120) * 0.0004);
     // 体に向かってくる球は振らずによける
-    return { swing: !hitsBatter(cross) && Math.random() < ps, perc, Texp, early: p.T - Texp, bat: { x: perc[0], y: perc[1], rx: D.rx * b.con, ry: D.ry * b.con, win: D.win, pow: b.pow * (D.pow || 1) } };
+    return { swing: p.hbpS == null && Math.random() < ps, perc, Texp, early: p.T - Texp, bat: { x: perc[0], y: perc[1], rx: D.rx * b.con, ry: D.ry * b.con, win: D.win, pow: b.pow * (D.pow || 1) } };
   }
   function cpuSwing(now) {
     pitch.swung = true;
@@ -999,13 +1000,47 @@
     toBetween(walk ? 2.6 : k3 && game.outs >= 3 ? 2.2 : 1.2);
   }
 
-  // デッドボール: 本塁上で打者の体に当たったか（振っていたらストライク扱いなので呼ばない）
-  const hitsBatter = c => !practice && c[0] <= bX() + 0.17 + BALL_R && c[0] >= bX() - 0.25 && c[1] >= 0.1 && c[1] <= 1.75;
+  // デッドボール: 打者の体を太さのある線分（カプセル）の集まりで表し、投球の軌道が実際に触れるかを調べる
+  // 形は drawBatter / drawPerson の構えた姿勢と同じ（ローカル座標 → ワールド: 打者は本塁の方を向く）
+  // 腕・バットは含めない（振っていればストライク、構えた腕に当たる球はほぼ体にも当たる）
+  function batterBody() {
+    const W = l => [bX() + l[2], l[1], bZ() - l[0]];
+    const C = (a, b, w) => ({ a: W(a), b: W(b), r: w / 2 });
+    const hipL = [-0.11, 0.88, -0.05], hipR = [0.11, 0.88, -0.05];
+    const knL = [-0.255, 0.47, 0.13], knR = [0.245, 0.47, 0.105];
+    const chest = [0, 1.155, -0.0335], sh = [0, 1.38, -0.02], head = [-0.04, 1.58, 0.02];
+    return [
+      C(hipL, knL, 0.14), C(hipR, knR, 0.14),                        // もも
+      C(knL, [-0.4, 0, 0.05], 0.11), C(knR, [0.38, 0, 0], 0.11),     // すね
+      C([-0.06, 0.88, -0.05], [0.06, 0.88, -0.05], 0.17),            // 腰
+      C([0, 0.98, -0.05], chest, 0.28), C(chest, sh, 0.32),          // 胴体
+      C([-0.19, 1.34, -0.02], [0.19, 1.34, -0.02], 0.12),            // 肩
+      C(head, head, 0.23),                                           // 頭
+    ];
+  }
+  function segDist(p, a, b) {
+    const ab = sub(b, a), t = clamp(dot(sub(p, a), ab) / (dot(ab, ab) || 1), 0, 1);
+    const q = add(a, mul(ab, t));
+    return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  }
+  // 投球が打者の体に触れる位置の s（最初に触れた所）。触れなければ null
+  function hbpS(p) {
+    if (practice) return null;
+    const body = batterBody();
+    const zs = REL[2];
+    const step = 0.02 / zs;   // 2cm 刻み
+    for (let s = Math.max(0, 1 - (bZ() + 0.7) / zs); s <= p.sEnd; s += step) {
+      const b = pitchPos(p, s);
+      for (const c of body) if (segDist(b, c.a, c.b) <= c.r + BALL_R) return s;
+    }
+    return null;
+  }
   function startHBP() {
     pitch.hbp = true;
+    if (!pitch.cross) pitch.cross = pitchPos(pitch, 1);
     sfx.hbp();
     flash = 0.35;
-    ballPos = pitch.cross.slice();
+    ballPos = pitchPos(pitch, pitch.hbpS);
     ballTrail = [];
     // 体に当たって跳ね返る
     pitch.vel = [rand(0.8, 1.6), rand(1.0, 2.0), rand(2.0, 3.5)];
@@ -1037,7 +1072,7 @@
   //  打球
   // =========================================================
   // プレイヤーのミート範囲の内側（ry に対する倍率）。HR_R: ホームランの円の半径, HIT_SQ: ヒットの四角の半分の幅
-  const HR_R = 0.5, HIT_SQ = 0.8;
+  const HR_R = 0.4, HIT_SQ = 0.8;
   // bat: ミートの中心・範囲とパワー（省略時はプレイヤーのカーソル）
   // rect: ミート範囲を横長の四角にする（プレイヤー）。CPU打者は楕円のまま
   function tryHit(cp, early, bat = { x: cursor.x, y: cursor.y, rx: D.rx, ry: D.ry, win: D.win, pow: 1, rect: true }) {
@@ -1572,6 +1607,8 @@
       const s = pitch.t / pitch.T;
       const cpu = pitch.cpu;
       if (cpu && cpu.swing && !pitch.swung && pitch.t >= cpu.Texp - SWING_LEAD) cpuSwing(now);
+      // 振っていなければ、体に触れた瞬間にデッドボール
+      if (!pitch.swung && pitch.hbpS != null && s >= pitch.hbpS) { startHBP(); return; }
       // 自分の打撃は立ち位置に合わせた打撃面で判定する
       if (mode === 'bat' && !pitch.contact && s >= hitS()) {
         pitch.contact = pitchPos(pitch, hitS());
@@ -1587,7 +1624,6 @@
             if (tryHit(pitch.cross, cpu.early, cpu.bat)) return;
           }
         }
-        if (!pitch.swung && hitsBatter(pitch.cross)) { startHBP(); return; }
       }
       ballPos = pitchPos(pitch, Math.min(s, pitch.sEnd));
       // バッティングでまだ振っていなければ、振り遅れの許容幅が終わるまで判定を待つ
