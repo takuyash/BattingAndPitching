@@ -386,6 +386,68 @@ body.touch #swingBtn { display: block; }
   100% { opacity: 1; transform: scale(1); }
 }
 
+/* ---------- 得点・アウトの帯テロップ ---------- */
+#banner {
+  position: fixed;
+  top: 56%;
+  left: 0;
+  right: 0;
+  padding: 10px 16px 12px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  --bn: 255, 90, 90;
+  background: linear-gradient(90deg, transparent, rgba(var(--bn), 0.85) 18%, rgba(var(--bn), 0.85) 82%, transparent);
+  border-top: 2px solid rgba(255, 255, 255, 0.7);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.7);
+}
+#banner.show { animation: bannerIn 0.35s cubic-bezier(.2, 1.4, .4, 1) forwards; }
+#banner.score { --bn: 230, 160, 0; }
+#banner.lose, #banner.out { --bn: 200, 40, 40; }
+#banner.out-good { --bn: 20, 110, 200; }
+#bnMain {
+  font-size: clamp(30px, 6.5vw, 64px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), 0 0 18px rgba(255, 255, 255, 0.45);
+}
+#bnSub { font-size: clamp(14px, 2.6vw, 22px); font-weight: 700; font-variant-numeric: tabular-nums; }
+#bnSub:empty { display: none; }
+@keyframes bannerIn {
+  0% { opacity: 0; transform: translateX(-30%) scaleY(0.3); }
+  60% { opacity: 1; transform: translateX(2%) scaleY(1.05); }
+  100% { opacity: 1; transform: none; }
+}
+
+/* スコアボードを光らせる */
+#board.fx-gold { animation: glowGold 1.4s ease-out; }
+#board.fx-red { animation: glowRed 1.2s ease-out; }
+#board.fx-blue { animation: glowBlue 1.2s ease-out; }
+@keyframes glowGold { 0%, 40% { box-shadow: 0 0 0 3px #ffd43a, 0 0 32px 8px rgba(255, 200, 40, 0.9); } 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); } }
+@keyframes glowRed { 0%, 30% { box-shadow: 0 0 0 3px #ff5a5a, 0 0 28px 6px rgba(255, 70, 70, 0.85); } 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); } }
+@keyframes glowBlue { 0%, 30% { box-shadow: 0 0 0 3px #6fc8ff, 0 0 28px 6px rgba(80, 180, 255, 0.85); } 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); } }
+.score { position: relative; }
+#runs.fx-bump { animation: bump 0.6s cubic-bezier(.2, 1.8, .4, 1); }
+@keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.7); color: #ffd43a; } 100% { transform: scale(1); } }
+#runsPlus {
+  position: absolute;
+  left: 100%;
+  top: 4px;
+  margin-left: 2px;
+  font-size: 20px;
+  font-weight: 900;
+  color: #ffd43a;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+#runsPlus.lose { color: #ff6464; }
+#runsPlus.fx-float { animation: floatUp 1.6s ease-out; }
+@keyframes floatUp { 0% { opacity: 0; transform: translateY(10px) scale(0.6); } 20% { opacity: 1; transform: translateY(0) scale(1.2); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-18px); } }
+#outDots.fx-shake { animation: shake 0.5s ease-out; }
+@keyframes shake { 0%, 100% { transform: none; } 20% { transform: translateX(-4px) scale(1.25); } 40% { transform: translateX(4px) scale(1.25); } 60% { transform: translateX(-3px) scale(1.15); } 80% { transform: translateX(2px); } }
+
 /* ---------- Overlays ---------- */
 .overlay {
   position: fixed;

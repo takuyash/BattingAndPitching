@@ -478,7 +478,7 @@
   }
   function tone(o) {
     const a = ac(); if (!a) return;
-    const t = a.currentTime;
+    const t = a.currentTime + (o.delay || 0);
     const os = a.createOscillator(); os.type = o.type || 'sine';
     os.frequency.setValueAtTime(o.f, t);
     if (o.f2) os.frequency.exponentialRampToValueAtTime(o.f2, t + o.dur);
@@ -499,6 +499,24 @@
     hbp() { noise({ type: 'lowpass', f: 450, dur: 0.12, gain: 0.9 }); tone({ f: 220, f2: 90, dur: 0.1, gain: 0.4 }); },
     cheer(d) { noise({ f: 1100, q: 0.6, dur: d, gain: 0.3, at: 0.3 }); noise({ f: 2400, q: 0.7, dur: d * 0.9, gain: 0.12, at: 0.4 }); noise({ f: 500, q: 0.5, dur: d, gain: 0.18, at: 0.5 }); },
     ooh() { noise({ f: 650, q: 0.8, dur: 1.2, gain: 0.14, at: 0.25 }); },
+    // 得点: 明るいファンファーレと歓声
+    score() {
+      [784, 988, 1175, 1568].forEach((f, i) => tone({ f, dur: i === 3 ? 0.5 : 0.18, gain: 0.16, type: 'triangle', delay: i * 0.09 }));
+      tone({ f: 392, dur: 0.6, gain: 0.08, type: 'square', delay: 0.27 });
+      sfx.cheer(1.8);
+    },
+    // 失点: 下がっていく音とため息
+    lose() {
+      [523, 415, 330].forEach((f, i) => tone({ f, dur: 0.28, gain: 0.12, type: 'sawtooth', delay: i * 0.16 }));
+      sfx.ooh();
+    },
+    // アウト: good はアウトを取った側（ピッチング）、last は3アウト目
+    out(good, last) {
+      const fs = good ? [660, 990] : [330, 220];
+      if (last) fs.push(good ? 1320 : 165);
+      fs.forEach((f, i) => tone({ f, dur: 0.22, gain: good ? 0.14 : 0.18, type: good ? 'triangle' : 'square', delay: i * 0.14 }));
+      if (good && last) sfx.cheer(1.2);
+    },
   };
 
   // =========================================================
@@ -618,6 +636,56 @@
     }
     if (vs) { const t = vsTotals(); $('runs').textContent = `${t.me}-${t.cpu}`; }
   }
+  // =========================================================
+  //  得点・アウトの演出（画面中央の帯テロップ・スコアボードの光・効果音）
+  // =========================================================
+  let bannerTimer = 0;
+  const burst = { n: 0, t: 0 };   // 続けて入った得点の数（ホームランなどでまとめて表示）
+  function banner(main, sub, cls, dur) {
+    const b = $('banner');
+    $('bnMain').textContent = main;
+    $('bnSub').textContent = sub || '';
+    b.className = '';
+    void b.offsetWidth;
+    b.className = 'show ' + cls;
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => { b.className = ''; }, dur * 1000);
+  }
+  // CSS アニメーションをかけ直す
+  function pulse(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+  function runFx() {
+    if (practice) return;
+    const good = mode === 'bat', now = performance.now();
+    burst.n = now - burst.t < 1500 ? burst.n + 1 : 1;
+    burst.t = now;
+    const t = vs && vsTotals();
+    const sub = vs ? `自分 ${t.me} - ${t.cpu} CPU` : good ? `${game.runs}点目` : `${game.runs}失点`;
+    banner(good ? (burst.n > 1 ? `${burst.n}点追加!` : '得点!') : (burst.n > 1 ? `${burst.n}失点` : '失点'), sub, good ? 'score' : 'lose', 2);
+    pulse($('board'), good ? 'fx-gold' : 'fx-red');
+    pulse($('runs'), 'fx-bump');
+    const plus = $('runsPlus');
+    plus.textContent = '+' + burst.n;
+    plus.classList.toggle('lose', !good);
+    pulse(plus, 'fx-float');
+    // 同時に何点も入るときは音を重ねない
+    if (burst.n === 1) { if (good) { sfx.score(); confetti(70); } else sfx.lose(); }
+  }
+  function outFx() {
+    if (practice) return;
+    const o = game.outs, good = mode === 'pitch', last = o >= 3;
+    let sub = '';
+    if (last) {
+      const t = vs && vsTotals();
+      const end = !vs ? mode === 'bat' || game.inning >= INNINGS
+        : mode === 'pitch' ? game.inning >= vsm.innings : game.inning >= vsm.innings && t.cpu > t.me;
+      sub = end ? 'ゲームセット' : vs ? 'チェンジ' : `${game.inning + 1}回へ`;
+    }
+    banner(last ? 'スリーアウト' : `${Math.min(o, 3)}アウト`, sub, good ? 'out-good' : 'out', last ? 2.4 : 1.5);
+    pulse($('board'), good ? 'fx-blue' : 'fx-red');
+    pulse($('outDots'), 'fx-shake');
+    sfx.out(good, last);
+  }
+
   function setLive(text) {
     const el = $('live');
     if (text) { el.textContent = text; el.classList.add('show'); } else el.classList.remove('show');
@@ -914,7 +982,8 @@
       game.balls++;
       if (game.balls >= 4) { walk = true; showMsg('フォアボール', '', 'good'); } else showMsg('ボール', '', 'neutral', 1.1);
     }
-    if (game.strikes >= 3) { game.outs++; game.ks++; game.batter++; game.balls = game.strikes = 0; }
+    const k3 = game.strikes >= 3;
+    if (k3) { game.outs++; game.ks++; game.batter++; game.balls = game.strikes = 0; }
     if (walk) {
       const spd = batterSpd();   // 打順を進める前に四死球の打者の走力を取る
       game.bb++; game.batter++;  // bb: 四死球の数
@@ -926,7 +995,8 @@
       batterVisible = false;
     }
     updateHUD();
-    toBetween(walk ? 2.6 : 1.2);
+    if (k3) outFx();
+    toBetween(walk ? 2.6 : k3 && game.outs >= 3 ? 2.2 : 1.2);
   }
 
   // デッドボール: 本塁上で打者の体に当たったか（振っていたらストライク扱いなので呼ばない）
@@ -1331,26 +1401,34 @@
     settleRunners();
     setLive('');
     updateHUD();
-    toBetween(1.9);
+    const out = k === 'flyout' || k === 'groundout' || k === 'dp';
+    if (out) outFx();
+    toBetween(out && game.outs >= 3 ? 2.6 : 1.9);
   }
   function settleRunners() {
     const keep = [];
     for (const r of runners) {
       if (r.out) continue;
       r.b = r.target;
-      if (r.b >= 4) {
-        game.runs++;
-        if (vs) { const side = vsm.line[mode === 'bat' ? 'me' : 'cpu']; side[game.inning - 1] = (side[game.inning - 1] || 0) + 1; }
-        continue;
-      }
+      if (r.b >= 4) { scoreRun(r); continue; }
       r.batter = false;
       keep.push(r);
     }
     runners = keep;
   }
+  // ランナーがホームを踏んだ瞬間に得点する（1人につき1回だけ）
+  function scoreRun(r) {
+    if (r.scored) return;
+    r.scored = true;
+    game.runs++;
+    if (vs) { const side = vsm.line[mode === 'bat' ? 'me' : 'cpu']; side[game.inning - 1] = (side[game.inning - 1] || 0) + 1; }
+    updateHUD();
+    runFx();
+  }
   function updateRunners(dt, t) {
     for (const r of runners) {
       if (r.b < r.target && t >= r.delay) r.b = Math.min(r.target, r.b + r.speed * (r.spd || 1) * dt);
+      if (!r.out && r.b >= 4) scoreRun(r);
     }
   }
   function runnerPos(b) {
@@ -2224,9 +2302,9 @@
     if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash * 0.5})`; ctx.fillRect(0, 0, W, H); }
   }
 
-  function confetti() {
+  function confetti(n = 180) {
     const cols = ['#ffd43a', '#ff5a5a', '#5fe07a', '#6fc8ff', '#ffffff', '#ff9a3a'];
-    for (let i = 0; i < 180; i++) {
+    for (let i = 0; i < n; i++) {
       particles.push({ x: rand(0, W), y: rand(-H * 0.3, -10), vx: rand(-60, 60), vy: rand(40, 180), r: rand(0, PI), vr: rand(-8, 8), c: cols[i % cols.length], s: rand(6, 12), life: rand(2.5, 4.5) });
     }
   }
