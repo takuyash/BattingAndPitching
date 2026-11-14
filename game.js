@@ -939,22 +939,49 @@
     $('pitchSel').classList.add('lock');
     $('pSpeed').textContent = '';
     resetFielders(true);
-    const change = mode === 'bat' && newPitcherAt(game.inning);
-    if (change) rollLefty();
+    const change = mode === 'bat' && pitcherDue(game.inning);
+    if (change) changePitcher(game.inning <= 1);
+    opp.inn = 0;
     applyModeUI();
     updateHUD();
     const sub = mode !== 'bat' ? '守備' : change && game.inning > 1 ? '投手交代　' + handLbl() : '攻撃　相手は' + handLbl();
     showMsg(inningLbl(), sub, 'neutral', 1.6);
     toBetween(1.8);
   }
-  // 試合の相手投手の交代: 先発はイニング数の半分強（9回→5回、7回→4回、5回→3回）まで投げ、
-  // その後は2イニングずつ継投。3イニング以下の試合は毎回交代
+  // =========================================================
+  //  試合の相手投手の交代（回と失点で決める）
+  // =========================================================
+  // 先発の目安はイニング数の半分強（9回→5回、7回→4回、5回→3回）。3イニング以下の試合は毎回交代
+  //   先発: 無失点なら +2回、1失点なら +1回長く投げる。3失点で1回早く、4失点以上なら次の回の頭で降板
+  //   リリーフ: 2回まで。2失点以上したら次の回の頭で降板
+  //   回の途中でも、その回3失点か、先発6失点・リリーフ3失点で KO（新しい打者を迎える前に交代）
   const starterInn = n => (n <= 3 ? 1 : Math.round(n * 0.55));
-  function newPitcherAt(inn) {
-    const n = vsm.innings, s = starterInn(n);
+  const opp = { from: 1, runs: 0, inn: 0, starter: true };   // 今の相手投手: 登板した回, 失点, この回の失点, 先発か
+  function pitcherDue(inn) {
+    const n = vsm.innings;
     if (inn <= 1 || n <= 3) return true;
-    if (inn <= s) return false;
-    return (inn - s - 1) % 2 === 0;
+    const went = inn - opp.from;   // 投げ終えたイニング数
+    if (opp.starter) {
+      if (opp.runs >= 4) return true;
+      const limit = starterInn(n) + (opp.runs === 0 ? 2 : opp.runs === 1 ? 1 : opp.runs >= 3 ? -1 : 0);
+      return inn > limit;
+    }
+    return went >= 2 || opp.runs >= 2;
+  }
+  function changePitcher(starter = false) {
+    rollLefty();
+    Object.assign(opp, { from: game.inning, runs: 0, inn: 0, starter });
+  }
+  // 回の途中の KO。交代したら true
+  function koCheck() {
+    if (!vs || mode !== 'bat' || game.outs >= 3 || game.balls || game.strikes) return false;
+    if (opp.inn < 3 && opp.runs < (opp.starter ? 6 : 3)) return false;
+    changePitcher();
+    updateHUD();
+    showMsg('投手交代', handLbl() + 'がマウンドへ', 'neutral', 1.8);
+    sfx.ooh();
+    toBetween(2);
+    return true;
   }
   function endHalf() {
     const t = vsTotals();
@@ -1529,6 +1556,7 @@
     if (r.scored) return;
     r.scored = true;
     game.runs++;
+    if (vs && mode === 'bat') { opp.runs++; opp.inn++; }
     if (vs) { const side = vsm.line[mode === 'bat' ? 'me' : 'cpu']; side[game.inning - 1] = (side[game.inning - 1] || 0) + 1; }
     updateHUD();
     runFx();
@@ -1740,7 +1768,7 @@
         else if (vs && game.outs >= 3) endHalf();
         else if (game.outs >= 3 && mode === 'pitch' && game.inning < INNINGS) nextInning();
         else if (game.outs >= 3) gameOver();
-        else startNext();
+        else if (!koCheck()) startNext();
       }
     }
 
