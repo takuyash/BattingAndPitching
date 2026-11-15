@@ -26,13 +26,13 @@ body:not(.vs) .vs-only,
 body.vs .no-vs,
 body:not(.pmode):not(.vs) .hand-sel { display: none !important; }
 
-#game { display: block; position: fixed; inset: 0; }
+#game { display: block; position: fixed; top: 0; right: 0; bottom: 0; left: 0; }
 body.playing #game { cursor: none; }
 
 .hidden { display: none !important; }
 
 /* ---------- HUD ---------- */
-#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud { position: fixed; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; }
 
 #board {
   position: absolute;
@@ -473,7 +473,7 @@ body.touch #swingBtn { display: block; }
 /* ---------- プロ投手のギアチェンジ ---------- */
 #gear {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   pointer-events: none;
   display: none;
   align-items: center;
@@ -484,14 +484,14 @@ body.touch #swingBtn { display: block; }
 #gear.show { display: flex; animation: gearOut 2.4s ease-in forwards; }
 #gear .gr-flash {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: radial-gradient(ellipse at center, rgba(255, 140, 0, 0.15) 0%, rgba(255, 60, 0, 0.35) 55%, rgba(120, 0, 0, 0.85) 100%);
 }
 #gear.show .gr-flash { animation: gearFlash 2.4s ease-out forwards; }
 /* 集中線 */
 #gear .gr-lines {
   position: absolute;
-  inset: -50%;
+  top: -50%; right: -50%; bottom: -50%; left: -50%;
   background: repeating-conic-gradient(from 0deg, rgba(255, 230, 160, 0.55) 0deg 1.2deg, transparent 1.2deg 7deg);
   -webkit-mask: radial-gradient(circle, transparent 22%, #000 48%);
   mask: radial-gradient(circle, transparent 22%, #000 48%);
@@ -576,7 +576,7 @@ body.touch #swingBtn { display: block; }
 /* ---------- Overlays ---------- */
 .overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   display: flex;
   padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
   overflow-y: auto;

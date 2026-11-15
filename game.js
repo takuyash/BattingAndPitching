@@ -26,6 +26,18 @@
   // =========================================================
   const canvas = $('game');
   const ctx = canvas.getContext('2d');
+  // iOS 15 以前の Safari には roundRect が無く、描画が例外で止まるので代わりを用意する
+  if (!ctx.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+      r = Math.max(0, Math.min(+r || 0, Math.abs(w) / 2, Math.abs(h) / 2));
+      this.moveTo(x + r, y);
+      this.arcTo(x + w, y, x + w, y + h, r);
+      this.arcTo(x + w, y + h, x, y + h, r);
+      this.arcTo(x, y + h, x, y, r);
+      this.arcTo(x, y, x + w, y, r);
+      this.closePath();
+    };
+  }
   let W = 0, H = 0;
   const COARSE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
   function resize() {
@@ -2784,9 +2796,12 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    if (!paused) update(dt, now - pauseOff);
-    render();
+    // 1 フレームで例外が出てもループを止めない（止まると画面が固まって何も操作できなくなる）
     requestAnimationFrame(frame);
+    try {
+      if (!paused) update(dt, now - pauseOff);
+      render();
+    } catch (e) { console.error(e); }
   }
   requestAnimationFrame(frame);
 })();
