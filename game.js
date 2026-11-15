@@ -134,7 +134,7 @@
     king:   { name: '絶対王者',   desc: '全国制覇の最強校。投打走すべてが一枚上',
               bat: { ...DIFFS.hard, brk: 1.45, types: ALL_TYPES }, pit: { rx: 0.155, ry: 0.115, win: 0.1, read: 0.72, adapt: 0.86, field: 0.92 },
               def: { field: 1.1, react: 0.82, arm: 1.15, hold: 0.82, err: 0.005 } },
-    pro:    { name: 'プロ',       desc: 'プロ野球チーム。打線は全員S以上、主軸はSS。170km/h超えの剛速球と鋭い変化球、鉄壁の守備',
+    pro:    { name: 'プロ',       desc: 'プロ野球チーム。打線は全員S以上、主軸はSS。180km/h級の剛速球と鋭い変化球、鉄壁の守備。点を取られるとギアチェンジしてさらに加速',
               bat: { ...DIFFS.hard, brk: 1.55, types: ALL_TYPES }, pit: { rx: 0.16, ry: 0.12, win: 0.11, read: 0.8, adapt: 0.92, field: 0.9 },
               def: { field: 1.16, react: 0.75, arm: 1.25, hold: 0.75, err: 0.002 } },
   };
@@ -152,15 +152,25 @@
     strong: { vmin: 138, vmax: 155 },
     ace:    { vmin: 148, vmax: 163 },
     king:   { vmin: 155, vmax: 170 },
-    pro:    { vmin: 152, vmax: 174 },
+    pro:    { vmin: 160, vmax: 180 },
   };
+  // プロは点を取られるとギアチェンジして球速が上がる（試合を通して持ち越す。投手が代わっても下がらない）
+  //   kmh: 1段ごとの球速の上乗せ, brk: 1段ごとの変化量の上乗せ（倍率）
+  const GEAR = { max: 3, kmh: 6, brk: 0.05 };
+  let gear = 0, gearDue = false;
+  const gearOn = () => vs && selSchool === 'pro';
   // 試合モードの相手打線は、打者ごとの能力（VS_LINEUP で作る ミート・パワー・走力）で強さを出すので、
   // チーム全体のバットの当たり範囲・パワー・走力の倍率は標準にそろえる（二重にかからないように）
   const VS_PIT_BASE = { rx: PDIFFS.normal.rx, ry: PDIFFS.normal.ry, pow: 1, spd: 1 };
   const diffFor = m => {
     if (!vs) return (m === 'pitch' ? PDIFFS : DIFFS)[selDiff];
     if (m === 'pitch') return { ...SCHOOLS[selSchool].pit, ...VS_PIT_BASE };
-    return { ...SCHOOLS[selSchool].bat, ...VS_VELO[selSchool], ...SCHOOLS[selSchool].def, ...VS_BAT_ZONE };
+    const d = { ...SCHOOLS[selSchool].bat, ...VS_VELO[selSchool], ...SCHOOLS[selSchool].def, ...VS_BAT_ZONE };
+    if (gearOn() && gear) {
+      d.vmin += gear * GEAR.kmh; d.vmax += gear * GEAR.kmh;
+      d.brk *= 1 + gear * GEAR.brk;
+    }
+    return d;
   };
   // 守備の補正（未指定なら標準）
   const THROW_V = 30;   // 送球の速さ (m/s)
@@ -520,6 +530,15 @@
       [523, 415, 330].forEach((f, i) => tone({ f, dur: 0.28, gain: 0.12, type: 'sawtooth', delay: i * 0.16 }));
       sfx.ooh();
     },
+    // ギアチェンジ: エンジンが唸りを上げる音と、空気を裂く音・重い衝撃
+    gear() {
+      tone({ f: 70, f2: 520, dur: 0.7, gain: 0.16, type: 'sawtooth' });
+      tone({ f: 105, f2: 780, dur: 0.7, gain: 0.08, type: 'square' });
+      noise({ f: 1800, f2: 6000, q: 2, dur: 0.5, gain: 0.25, at: 0.05, delay: 0.55 });
+      noise({ type: 'lowpass', f: 900, dur: 0.3, gain: 1.0, delay: 0.7 });
+      tone({ f: 110, f2: 40, dur: 0.4, gain: 0.6, delay: 0.7 });
+      sfx.cheer(1.6);
+    },
     // アウト: good はアウトを取った側（ピッチング）、last は3アウト目
     out(good, last) {
       const fs = good ? [660, 990] : [330, 220];
@@ -652,7 +671,7 @@
       bar.style.width = stamina + '%';
       bar.style.background = stamina > 50 ? '#5fe07a' : stamina > 25 ? '#ffd84a' : '#ff5a5a';
     } else {
-      $('stats').innerHTML = `${vs ? `<b>${inningLbl()}</b> ` : ''}<b>${handLbl()}</b> 安打 <b>${game.hits}</b> 本塁打 <b>${game.hrs}</b> 最長 <b>${game.best ? Math.round(game.best) + 'm' : '-'}</b>`;
+      $('stats').innerHTML = `${vs ? `<b>${inningLbl()}</b> ` : ''}<b>${handLbl()}</b>${gearOn() && gear ? ` <b class="gearTag">GEAR${gear}</b>` : ''} 安打 <b>${game.hits}</b> 本塁打 <b>${game.hrs}</b> 最長 <b>${game.best ? Math.round(game.best) + 'm' : '-'}</b>`;
     }
     if (vs) { const t = vsTotals(); $('runs').textContent = `${t.me}-${t.cpu}`; }
   }
@@ -999,6 +1018,21 @@
     showMsg('投手交代', handLbl() + 'がマウンドへ', 'neutral', 1.8);
     sfx.ooh();
     toBetween(2);
+    return true;
+  }
+  // 点を取られたプロ投手のギアチェンジ（次の投球の前に演出）。演出したら true
+  function gearCheck() {
+    if (!gearDue || mode !== 'bat') return false;
+    gearDue = false;
+    gear = Math.min(GEAR.max, gear + 1);
+    D = diffFor(mode);
+    $('grMeter').innerHTML = Array.from({ length: GEAR.max }, (_, i) => `<i class="${i < gear ? 'on' : ''}${i === gear - 1 ? ' new' : ''}"></i>`).join('');
+    $('grSub').textContent = `GEAR ${gear}　最速 ${D.vmax} km/h`;
+    pulse($('gear'), 'show');
+    $('pSpeed').textContent = '';
+    sfx.gear();
+    updateHUD();
+    toBetween(2.6);
     return true;
   }
   function endHalf() {
@@ -1604,6 +1638,7 @@
     r.scored = true;
     game.runs++;
     if (vs && mode === 'bat') { opp.runs++; opp.inn++; }
+    if (mode === 'bat' && gearOn() && gear < GEAR.max) gearDue = true;
     if (vs) { const side = vsm.line[mode === 'bat' ? 'me' : 'cpu']; side[game.inning - 1] = (side[game.inning - 1] || 0) + 1; }
     updateHUD();
     runFx();
@@ -1817,7 +1852,7 @@
         else if (vs && game.outs >= 3) endHalf();
         else if (game.outs >= 3 && mode === 'pitch' && game.inning < INNINGS) nextInning();
         else if (game.outs >= 3) gameOver();
-        else if (!koCheck()) startNext();
+        else if (!koCheck() && !gearCheck()) startNext();
       }
     }
 
@@ -2623,6 +2658,8 @@
       Object.assign(vsm, { line: { me: [], cpu: [] }, saved: {}, skip: false, walkoff: false });
       vsLineup = makeLineup(selSchool);
     }
+    gear = 0; gearDue = false;
+    $('gear').classList.remove('show');
     D = diffFor(mode);
     rollLefty();
     applyModeUI();

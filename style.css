@@ -469,6 +469,81 @@ body.touch #swingBtn { display: block; }
   100% { opacity: 1; transform: none; }
 }
 
+/* ---------- プロ投手のギアチェンジ ---------- */
+#gear {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 30;
+}
+#gear.show { display: flex; animation: gearOut 2.4s ease-in forwards; }
+#gear .gr-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 140, 0, 0.15) 0%, rgba(255, 60, 0, 0.35) 55%, rgba(120, 0, 0, 0.85) 100%);
+}
+#gear.show .gr-flash { animation: gearFlash 2.4s ease-out forwards; }
+/* 集中線 */
+#gear .gr-lines {
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 230, 160, 0.55) 0deg 1.2deg, transparent 1.2deg 7deg);
+  -webkit-mask: radial-gradient(circle, transparent 22%, #000 48%);
+  mask: radial-gradient(circle, transparent 22%, #000 48%);
+}
+#gear.show .gr-lines { animation: gearSpin 2.4s linear forwards; }
+#gear .gr-box { position: relative; text-align: center; }
+#gear.show .gr-box { animation: gearSlam 0.5s cubic-bezier(.2, 1.6, .4, 1) both, gearShake 0.45s 0.35s linear 2; }
+#gear .gr-en {
+  font-size: clamp(14px, 2.8vw, 26px);
+  font-weight: 900;
+  letter-spacing: 0.5em;
+  color: #fff3c0;
+  text-shadow: 0 0 12px rgba(255, 120, 0, 0.9);
+}
+#gear .gr-main {
+  font-size: clamp(44px, 11vw, 120px);
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.05;
+  background: linear-gradient(180deg, #fffbe0 0%, #ffd43a 40%, #ff5a00 75%, #b00000 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 2px #3a0000;
+  filter: drop-shadow(0 0 18px rgba(255, 80, 0, 0.9)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6));
+}
+#gear .gr-meter { display: flex; justify-content: center; gap: 8px; margin: 10px 0 6px; }
+#gear .gr-meter i {
+  width: clamp(26px, 5vw, 44px);
+  height: 12px;
+  border-radius: 3px;
+  transform: skewX(-20deg);
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+#gear .gr-meter i.on { background: linear-gradient(90deg, #ffd43a, #ff3c00); box-shadow: 0 0 10px #ff6a00; }
+#gear .gr-meter i.new { animation: gearNew 0.5s 0.4s ease-out 3 both; }
+#gear .gr-sub {
+  font-size: clamp(16px, 3.2vw, 28px);
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 0 #000, 0 0 12px rgba(255, 60, 0, 0.9);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes gearFlash { 0% { opacity: 0; } 6% { opacity: 1; background-color: rgba(255, 255, 255, 0.7); } 20% { background-color: transparent; } 75% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes gearSpin { 0% { opacity: 0; transform: rotate(0) scale(1.4); } 10% { opacity: 1; transform: rotate(4deg) scale(1); } 75% { opacity: 0.8; } 100% { opacity: 0; transform: rotate(20deg) scale(1); } }
+@keyframes gearSlam { 0% { opacity: 0; transform: scale(3); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes gearShake { 0%, 100% { translate: 0 0; } 25% { translate: -6px 3px; } 50% { translate: 5px -4px; } 75% { translate: -3px -2px; } }
+@keyframes gearNew { 0%, 100% { filter: none; } 50% { filter: brightness(2.2); } }
+@keyframes gearOut { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
+/* 試合中の HUD に出すギア表示 */
+.gearTag { color: #ff8a3a; text-shadow: 0 0 6px rgba(255, 90, 0, 0.8); }
+
 /* スコアボードを光らせる */
 #board.fx-gold { animation: glowGold 1.4s ease-out; }
 #board.fx-red { animation: glowRed 1.2s ease-out; }
