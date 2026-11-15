@@ -1939,7 +1939,7 @@
   // 実在球団と似た配色を避ける（守備: ウォームグレー×深緑、打撃: アイボリー×紫）
   const DEF_COL = { shirt: '#c9c4b8', pants: '#c9c4b8', cap: '#0f6b5f', under: '#0c5a50', sock: '#0f6b5f', belt: '#083d36', team: 'BLAZE' };
   const BAT_COL = { shirt: '#f3ecdb', pants: '#f3ecdb', cap: '#55307a', under: '#55307a', sock: '#55307a', belt: '#3a1f56', team: 'STARS', helmet: true };
-  const OUTLINE = 'rgba(16,22,38,0.9)', SHOE = '#1b1d22', GEAR = '#2c3446', HAIR = '#2a1d16';
+  const OUTLINE = 'rgba(16,22,38,0.9)', SHOE = '#1b1d22', C_GEAR = '#2c3446', HAIR = '#2a1d16';
   const UNI_NUM = { P: 18, C: 27, '1B': 3, '2B': 4, SS: 6, '3B': 5, LF: 7, CF: 8, RF: 9 };
 
   function poseJoints(pose, ph) {
@@ -2100,7 +2100,7 @@
     // ---- 脚（捕手はレガース） ----
     const legs = [[w.fl, toe(w.fl), 0.1, SHOE], [w.fr, toe(w.fr), 0.1, SHOE],
       [hipL, kneeL, 0.14, col.pants], [hipR, kneeR, 0.14, col.pants]];
-    if (catcher) legs.push([kneeL, w.fl, 0.13, GEAR], [kneeR, w.fr, 0.13, GEAR]);
+    if (catcher) legs.push([kneeL, w.fl, 0.13, C_GEAR], [kneeR, w.fr, 0.13, C_GEAR]);
     else legs.push([kneeL, shinL, 0.12, col.pants], [shinL, w.fl, 0.095, col.sock],
       [kneeR, shinR, 0.12, col.pants], [shinR, w.fr, 0.095, col.sock]);
     draw(legs);
@@ -2137,7 +2137,7 @@
     const surf = (z, y = 0) => toW(add(torsoUp, [0, y, z]));
     if (catcher && facing > 0) {
       // プロテクター
-      poly([loc([-0.15, 0.12, 0.15]), loc([0.15, 0.12, 0.15]), toW(add(J.sh, [0.17, -0.03, 0.12])), toW(add(J.sh, [-0.17, -0.03, 0.12]))], GEAR);
+      poly([loc([-0.15, 0.12, 0.15]), loc([0.15, 0.12, 0.15]), toW(add(J.sh, [0.17, -0.03, 0.12])), toW(add(J.sh, [-0.17, -0.03, 0.12]))], C_GEAR);
     } else if (big && facing > 0.2) {
       // 前立てのパイピングと胸マーク
       limb(toW(add(J.sh, [0, -0.02, 0.15])), loc([0, bz + 0.03, 0.15]), 0.012, col.sock);
@@ -2208,7 +2208,7 @@
       }
       // 帽子・ヘルメットのドーム
       const cr = col.helmet || catcher ? 1.16 : 1.06, cy = hs[1] - hr * (col.helmet || catcher ? 0.04 : 0.14);
-      ctx.fillStyle = catcher ? GEAR : col.cap;
+      ctx.fillStyle = catcher ? C_GEAR : col.cap;
       ctx.beginPath(); ctx.arc(hs[0], cy, hr * cr, PI, 0); ctx.closePath(); ctx.fill();
       if (big) { ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1, hr * 0.12); ctx.stroke(); }
       ctx.fillStyle = 'rgba(255,255,255,0.28)';   // つや
